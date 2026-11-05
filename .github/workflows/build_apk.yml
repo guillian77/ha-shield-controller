@@ -45,6 +45,7 @@ jobs:
         fi
 
         # Tolérant aux retours à la ligne/espaces ajoutés par un copier-coller.
+        echo "ANDROID_KEYSTORE_BASE64 : ${#KEYSTORE_BASE64} caractères (3536 attendus pour un .jks PKCS12 de 2,6 ko)"
         if ! printf '%s' "${KEYSTORE_BASE64}" | tr -d ' \t\r\n' | base64 -d > "${RUNNER_TEMP}/release.jks" 2>/dev/null; then
           echo "::error::ANDROID_KEYSTORE_BASE64 n'est pas du base64 valide (valeur tronquée, placeholder, ou fichier non encodé)."
           exit 1
