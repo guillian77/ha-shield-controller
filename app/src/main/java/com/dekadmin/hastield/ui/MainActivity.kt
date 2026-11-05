@@ -37,6 +37,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import com.dekadmin.hastield.BuildConfig
+import com.dekadmin.hastield.R
 import com.dekadmin.hastield.ha.DiscoveredServer
 import com.dekadmin.hastield.ha.HAEntity
 import com.dekadmin.hastield.ha.HaAuth
@@ -93,11 +95,25 @@ class MainActivity : ComponentActivity() {
         api = HomeAssistantApi(settings)
 
         setContent {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = AppColors.accent,
+                    onPrimary = Color.White,
+                    background = AppColors.background,
+                    onBackground = AppColors.textPrimary,
+                    surface = AppColors.surface,
+                    onSurface = AppColors.textPrimary,
+                    surfaceVariant = AppColors.surfaceHigh,
+                    onSurfaceVariant = AppColors.textSecondary,
+                    outline = AppColors.outline
+                )
             ) {
-                MainScreen(settings, api)
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = AppColors.background
+                ) {
+                    MainScreen(settings, api)
+                }
             }
         }
     }
@@ -175,14 +191,14 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
             Column {
                 Text(
                     text = "HA Shield Control",
-                    fontSize = 24.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = AppColors.textPrimary
                 )
                 Text(
                     text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                    fontSize = 12.sp,
-                    color = Color.Gray
+                    fontSize = 11.sp,
+                    color = AppColors.textSecondary
                 )
             }
             Row(
@@ -711,9 +727,8 @@ fun DashboardPane(
 ) {
     if (!isConnected) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "Veuillez configurer le serveur et vous connecter dans les réglages.",
-                color = Color.Gray
+            DashboardHint(
+                text = "Serveur non connecté — ouvre « Réglages » pour configurer l'accès à Home Assistant."
             )
         }
         return
@@ -722,20 +737,32 @@ fun DashboardPane(
     val displayEntities = entities.filter { selectedEntities.contains(it.entityId) }
     if (displayEntities.isEmpty()) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "Aucun élément sélectionné. Ouvrez 'Réglages' pour en choisir.",
-                color = Color.Yellow
+            DashboardHint(
+                text = "Aucune entité sélectionnée — ouvre « Réglages » pour en choisir."
             )
         }
         return
     }
 
+    val thermostats = displayEntities.filter { it.type == "thermostat" }
+    val lights = displayEntities.filter { it.type == "light" }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
-        items(displayEntities, key = { it.entityId }) { entity ->
-            EntityCard(entity, api)
+        if (thermostats.isNotEmpty()) {
+            item { SectionHeader("Chauffage", R.drawable.ic_entity_thermostat) }
+            items(thermostats, key = { it.entityId }) { entity ->
+                ClimateCard(entity, api)
+            }
+        }
+        if (lights.isNotEmpty()) {
+            item { SectionHeader("Éclairage", R.drawable.ic_entity_light) }
+            items(lights, key = { it.entityId }) { entity ->
+                LightCard(entity, api)
+            }
         }
     }
 }
@@ -828,138 +855,5 @@ private fun parseHassTokens(raw: String?): JSONObject? {
         if (text.isBlank()) null else JSONObject(text)
     } catch (e: Exception) {
         null
-    }
-}
-
-@Composable
-fun EntityCard(entity: HAEntity, api: HomeAssistantApi) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2D2D2D))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = entity.name,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                val detail = if (entity.type == "thermostat") {
-                    val current = entity.attributes.asDouble("current_temperature")
-                    "État: ${entity.state} · Actuel ${formatTemp(current)}°C"
-                } else {
-                    "État: ${entity.state}"
-                }
-                Text(text = detail, fontSize = 14.sp, color = Color.LightGray)
-            }
-
-            when (entity.type) {
-                "light" -> {
-                    val isOn = entity.state == "on"
-                    Switch(
-                        checked = isOn,
-                        onCheckedChange = { checked ->
-                            val service = if (checked) "turn_on" else "turn_off"
-                            api.callService("light", service, entity.entityId)
-                        }
-                    )
-                }
-                "thermostat" -> ThermostatControls(entity, api)
-            }
-        }
-    }
-}
-
-/** Valeurs numériques d'un attribut, quel que soit le type JSON renvoyé. */
-private fun Map<String, Any>.asDouble(key: String): Double? =
-    (this[key] as? Number)?.toDouble()
-
-private fun Map<String, Any>.asStringList(key: String): List<String> {
-    val value = this[key] ?: return emptyList()
-    return when (value) {
-        is JSONArray -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }
-        is List<*> -> value.mapNotNull { it?.toString()?.takeIf(String::isNotBlank) }
-        is String -> value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        else -> emptyList()
-    }
-}
-
-private fun formatTemp(value: Double?): String =
-    if (value == null) "--" else String.format(java.util.Locale.US, "%.1f", value)
-
-/**
- * Commandes d'un thermostat, sur une seule ligne avec le nom : − / + pour la
- * consigne (`climate.set_temperature`) et presets (`climate.set_preset_mode`).
- */
-@Composable
-fun ThermostatControls(entity: HAEntity, api: HomeAssistantApi) {
-    val attrs = entity.attributes
-    val current = attrs.asDouble("current_temperature")
-    val target = attrs.asDouble("temperature")
-    val step = attrs.asDouble("target_temp_step") ?: 0.5
-    val minTemp = attrs.asDouble("min_temp") ?: 7.0
-    val maxTemp = attrs.asDouble("max_temp") ?: 35.0
-    val presetModes = attrs.asStringList("preset_modes")
-    val activePreset = attrs["preset_mode"] as? String
-
-    fun setTarget(delta: Double) {
-        val base = target ?: current ?: return
-        var next = kotlin.math.round((base + delta) / step) * step
-        next = next.coerceIn(minTemp, maxTemp)
-        api.callService("climate", "set_temperature", entity.entityId, mapOf("temperature" to next))
-    }
-
-    fun setPreset(mode: String) {
-        api.callService("climate", "set_preset_mode", entity.entityId, mapOf("preset_mode" to mode))
-    }
-
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        CompactButton(label = "−", onClick = { setTarget(-step) })
-        Text(
-            text = "${formatTemp(target)}°C",
-            color = Color.White,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(min = 72.dp)
-        )
-        CompactButton(label = "+", onClick = { setTarget(step) })
-
-        if (presetModes.isNotEmpty()) {
-            LazyRow(
-                modifier = Modifier.widthIn(max = 420.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                items(presetModes, key = { it }) { mode ->
-                    CompactButton(
-                        label = mode,
-                        active = mode == activePreset,
-                        onClick = { setPreset(mode) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Bouton compact pour rester sur la hauteur d'une carte standard. */
-@Composable
-private fun CompactButton(label: String, active: Boolean = false, onClick: () -> Unit) {
-    val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-    if (active) {
-        Button(onClick = onClick, contentPadding = contentPadding) { Text(label, fontSize = 14.sp) }
-    } else {
-        OutlinedButton(onClick = onClick, contentPadding = contentPadding) { Text(label, fontSize = 14.sp) }
     }
 }
