@@ -14,12 +14,14 @@ import okhttp3.Response
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class UpdateInfo(
     val versionCode: Int,
     val versionName: String,
-    val apkUrl: String
+    val apkUrl: String,
+    val sha256: String = ""
 )
 
 /**
@@ -38,7 +40,7 @@ class Updater(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -68,7 +70,8 @@ class Updater(private val context: Context) {
                             UpdateInfo(
                                 versionCode = code,
                                 versionName = json.optString("versionName", code.toString()),
-                                apkUrl = json.optString("apkUrl", DEFAULT_APK_URL)
+                                apkUrl = json.optString("apkUrl", DEFAULT_APK_URL),
+                                sha256 = json.optString("sha256", "")
                             )
                         }
                     } catch (e: Exception) {
@@ -82,7 +85,7 @@ class Updater(private val context: Context) {
     }
 
     /**
-     * Télécharge l'APK puis ouvre l'installateur système.
+     * Télécharge l'APK, vérifie son empreinte puis ouvre l'installateur système.
      * [onState] reçoit un message d'état lisible par l'utilisateur.
      */
     fun downloadAndInstall(update: UpdateInfo, onState: (String) -> Unit) {
@@ -114,6 +117,16 @@ class Updater(private val context: Context) {
                         return
                     }
                 }
+
+                if (update.sha256.isNotBlank()) {
+                    val actual = sha256Of(target)
+                    if (!actual.equals(update.sha256, ignoreCase = true)) {
+                        target.delete()
+                        state("Fichier téléchargé corrompu (empreinte différente), réessaie.")
+                        return
+                    }
+                }
+
                 try {
                     install(target)
                     state("Installateur ouvert")
@@ -122,6 +135,19 @@ class Updater(private val context: Context) {
                 }
             }
         })
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun install(apk: File) {

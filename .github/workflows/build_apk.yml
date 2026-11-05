@@ -62,11 +62,13 @@ jobs:
       run: |
         mkdir -p dist
         cp app/build/outputs/apk/debug/app-debug.apk dist/app-debug.apk
+        SHA=$(sha256sum dist/app-debug.apk | cut -d' ' -f1)
         cat > dist/version.json <<JSON
         {
           "versionCode": ${{ github.run_number }},
           "versionName": "1.0.${{ github.run_number }}",
           "apkUrl": "https://github.com/guillian77/ha-shield-controller/releases/latest/download/app-debug.apk",
+          "sha256": "${SHA}",
           "commit": "${{ github.sha }}"
         }
         JSON
