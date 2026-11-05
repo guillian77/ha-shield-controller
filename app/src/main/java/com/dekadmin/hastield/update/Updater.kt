@@ -3,6 +3,8 @@ package com.dekadmin.hastield.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.FileProvider
 import okhttp3.Call
 import okhttp3.Callback
@@ -39,22 +41,25 @@ class Updater(private val context: Context) {
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     /** Renvoie la mise à jour disponible, ou null si l'app est à jour. */
     fun check(currentVersionCode: Int, callback: (UpdateInfo?) -> Unit) {
         val request = Request.Builder().url(VERSION_URL).header("Cache-Control", "no-cache").build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                callback(null)
+                mainHandler.post { callback(null) }
             }
 
             override fun onResponse(call: Call, response: Response) {
+                var result: UpdateInfo? = null
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        callback(null)
+                        mainHandler.post { callback(null) }
                         return
                     }
                     val body = resp.body?.string().orEmpty()
-                    val info = try {
+                    result = try {
                         val json = JSONObject(body)
                         val code = json.optInt("versionCode", 0)
                         if (code <= currentVersionCode) {
@@ -69,8 +74,9 @@ class Updater(private val context: Context) {
                     } catch (e: Exception) {
                         null
                     }
-                    callback(info)
                 }
+                val info = result
+                mainHandler.post { callback(info) }
             }
         })
     }
@@ -80,22 +86,23 @@ class Updater(private val context: Context) {
      * [onState] reçoit un message d'état lisible par l'utilisateur.
      */
     fun downloadAndInstall(update: UpdateInfo, onState: (String) -> Unit) {
+        val state: (String) -> Unit = { message -> mainHandler.post { onState(message) } }
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
         val target = File(dir, "app-${update.versionCode}.apk")
         if (target.exists()) target.delete()
 
         val request = Request.Builder().url(update.apkUrl).build()
-        onState("Téléchargement…")
+        state("Téléchargement…")
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                onState("Échec du téléchargement : ${e.message}")
+                state("Échec du téléchargement : ${e.message}")
             }
 
             override fun onResponse(call: Call, response: Response) {
                 response.use { resp ->
                     if (!resp.isSuccessful || resp.body == null) {
-                        onState("Échec du téléchargement (HTTP ${resp.code})")
+                        state("Échec du téléchargement (HTTP ${resp.code})")
                         return
                     }
                     try {
@@ -103,15 +110,15 @@ class Updater(private val context: Context) {
                             target.outputStream().use { output -> input.copyTo(output) }
                         }
                     } catch (e: Exception) {
-                        onState("Échec de l'écriture du fichier : ${e.message}")
+                        state("Échec de l'écriture du fichier : ${e.message}")
                         return
                     }
                 }
                 try {
                     install(target)
-                    onState("Installateur ouvert")
+                    state("Installateur ouvert")
                 } catch (e: Exception) {
-                    onState("Impossible d'ouvrir l'installateur : ${e.message}")
+                    state("Impossible d'ouvrir l'installateur : ${e.message}")
                 }
             }
         })

@@ -123,6 +123,15 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
     var statusMessage by remember { mutableStateOf("Configuration requise") }
     var showConfig by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
+    val updater = remember { Updater(context) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        updater.check(BuildConfig.VERSION_CODE) { info -> updateInfo = info }
+    }
+
     LaunchedEffect(accessToken) {
         if (accessToken.isNotBlank()) {
             while (true) {
@@ -153,15 +162,42 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "HA Shield Control",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Button(onClick = { showConfig = !showConfig }) {
-                Text(if (showConfig) "Retour au dashboard" else "Réglages")
+            Column {
+                Text(
+                    text = "HA Shield Control",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
             }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val available = updateInfo
+                if (available != null) {
+                    Button(
+                        onClick = {
+                            updater.downloadAndInstall(available) { msg -> updateMessage = msg }
+                        }
+                    ) {
+                        Text("Mettre à jour ${available.versionName}")
+                    }
+                }
+                Button(onClick = { showConfig = !showConfig }) {
+                    Text(if (showConfig) "Retour au dashboard" else "Réglages")
+                }
+            }
+        }
+
+        updateMessage?.let {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(text = it, fontSize = 12.sp, color = Color.Yellow)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -281,6 +317,12 @@ fun SettingsPane(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        item {
+            UpdateSection()
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
+        }
+
         item {
             Text(text = "Serveur Home Assistant", fontWeight = FontWeight.Bold, color = Color.White)
         }
@@ -490,13 +532,6 @@ fun SettingsPane(
                     color = Color.Yellow
                 )
             }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(4.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(4.dp))
-            UpdateSection()
         }
     }
 
