@@ -34,28 +34,47 @@ jobs:
     - name: Build debug APK with Gradle wrapper
       run: |
         chmod +x gradlew
-        ./gradlew --no-daemon assembleDebug --stacktrace
+        ./gradlew --no-daemon assembleDebug --stacktrace \
+          -PversionCode=${{ github.run_number }} \
+          -PversionName=1.0.${{ github.run_number }}
+
+    - name: Prepare release files (APK + version.json)
+      run: |
+        mkdir -p dist
+        cp app/build/outputs/apk/debug/app-debug.apk dist/app-debug.apk
+        cat > dist/version.json <<JSON
+        {
+          "versionCode": ${{ github.run_number }},
+          "versionName": "1.0.${{ github.run_number }}",
+          "apkUrl": "https://github.com/guillian77/ha-shield-controller/releases/latest/download/app-debug.apk",
+          "commit": "${{ github.sha }}"
+        }
+        JSON
+        cat dist/version.json
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: dist/app-debug.apk
         if-no-files-found: error
 
     # URL de téléchargement directe et stable, utilisable dans Downloader :
     # https://github.com/guillian77/ha-shield-controller/releases/latest/download/app-debug.apk
-    - name: Publish APK to the "latest" release
+    # version.json sert à la vérification de mise à jour depuis l'application.
+    - name: Publish APK and version.json to the "latest" release
       if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: latest
         name: Dernier build (debug)
         body: |
-          APK debug construit automatiquement depuis `main` (commit ${{ github.sha }}).
+          Build automatique depuis `main` — version 1.0.${{ github.run_number }} (commit ${{ github.sha }}).
 
           Lien direct : https://github.com/guillian77/ha-shield-controller/releases/latest/download/app-debug.apk
         prerelease: false
         make_latest: true
-        files: app/build/outputs/apk/debug/app-debug.apk
+        files: |
+          dist/app-debug.apk
+          dist/version.json
         overwrite_files: true

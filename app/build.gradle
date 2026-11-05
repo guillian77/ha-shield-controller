@@ -3,6 +3,10 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// versionCode/versionName sont fournis par la CI (-PversionCode=<run_number>)
+def appVersionCode = (project.findProperty("versionCode") ?: "1").toString().toInteger()
+def appVersionName = (project.findProperty("versionName") ?: "1.0").toString()
+
 android {
     namespace 'com.dekadmin.hastield'
     compileSdk 34
@@ -11,8 +15,8 @@ android {
         applicationId "com.dekadmin.hastield"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
 
         vectorDrawables {
             useSupportLibrary true
@@ -34,6 +38,7 @@ android {
     }
     buildFeatures {
         compose true
+        buildConfig true
     }
     composeOptions {
         // Doit correspondre à la version de Kotlin (1.9.24 -> 1.5.14)

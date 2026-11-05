@@ -23,11 +23,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -44,21 +46,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import com.dekadmin.hastield.BuildConfig
 import com.dekadmin.hastield.ha.DiscoveredServer
 import com.dekadmin.hastield.ha.HAEntity
 import com.dekadmin.hastield.ha.HaAuth
 import com.dekadmin.hastield.ha.HaDiscovery
 import com.dekadmin.hastield.ha.HomeAssistantApi
 import com.dekadmin.hastield.ha.SettingsManager
+import com.dekadmin.hastield.update.UpdateInfo
+import com.dekadmin.hastield.update.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -105,8 +113,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
-    val context = LocalContext.current
-
     var serverUrl by remember { mutableStateOf(settings.serverUrl) }
     var accessToken by remember { mutableStateOf(settings.accessToken) }
     var entities by remember { mutableStateOf<List<HAEntity>>(emptyList()) }
@@ -114,15 +120,6 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
     var isConnected by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("Configuration requise") }
     var showConfig by remember { mutableStateOf(false) }
-
-    var servers by remember { mutableStateOf<List<DiscoveredServer>>(emptyList()) }
-    var discovering by remember { mutableStateOf(false) }
-    var showLogin by remember { mutableStateOf(false) }
-
-    val discovery = remember { HaDiscovery(context) }
-    DisposableEffect(Unit) {
-        onDispose { discovery.stop() }
-    }
 
     LaunchedEffect(accessToken) {
         if (accessToken.isNotBlank()) {
@@ -147,210 +144,272 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp)
+            .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "HA Shield Control", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(
+                text = "HA Shield Control",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
             Button(onClick = { showConfig = !showConfig }) {
-                Text(if (showConfig) "Fermer Paramètres" else "Configuration & Sélection")
+                Text(if (showConfig) "Retour au dashboard" else "Réglages")
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
         if (showConfig) {
-            Card(
+            SettingsPane(
+                modifier = Modifier.weight(1f),
+                settings = settings,
+                entities = entities,
+                selectedEntities = selectedEntities,
+                onSelectionChange = {
+                    selectedEntities = it
+                    settings.saveSelectedEntities(it)
+                },
+                serverUrl = serverUrl,
+                onServerUrlChange = {
+                    serverUrl = it
+                    settings.serverUrl = it
+                },
+                accessToken = accessToken,
+                onAccessTokenChange = {
+                    accessToken = it
+                    settings.accessToken = it
+                    settings.refreshToken = ""
+                    settings.accessTokenExpiresAt = 0L
+                },
+                isConnected = isConnected,
+                statusMessage = statusMessage
+            )
+        } else {
+            DashboardPane(
+                modifier = Modifier.weight(1f),
+                api = api,
+                entities = entities,
+                selectedEntities = selectedEntities,
+                isConnected = isConnected
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsPane(
+    modifier: Modifier = Modifier,
+    settings: SettingsManager,
+    entities: List<HAEntity>,
+    selectedEntities: Set<String>,
+    onSelectionChange: (Set<String>) -> Unit,
+    serverUrl: String,
+    onServerUrlChange: (String) -> Unit,
+    accessToken: String,
+    onAccessTokenChange: (String) -> Unit,
+    isConnected: Boolean,
+    statusMessage: String
+) {
+    val context = LocalContext.current
+    val discovery = remember { HaDiscovery(context) }
+    var servers by remember { mutableStateOf<List<DiscoveredServer>>(emptyList()) }
+    var discovering by remember { mutableStateOf(false) }
+    var showLogin by remember { mutableStateOf(false) }
+    var editingUrl by remember { mutableStateOf(false) }
+    var editingToken by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        onDispose { discovery.stop() }
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Text(text = "Serveur Home Assistant", fontWeight = FontWeight.Bold, color = Color.White)
+        }
+
+        item {
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(text = "Serveur Home Assistant", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = serverUrl,
-                        onValueChange = { serverUrl = it.trim(); settings.serverUrl = serverUrl },
-                        label = { Text("URL (ex: http://192.168.1.50:8123)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                Text(
+                    text = serverUrl.ifBlank { "(non défini)" },
+                    color = Color.Cyan,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedButton(onClick = { editingUrl = true }) { Text("Modifier l'URL") }
+            }
+        }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(
-                            onClick = {
-                                servers = emptyList()
-                                discovering = true
-                                discovery.start(
-                                    durationMs = 8000,
-                                    onFound = { server ->
-                                        if (servers.none { it.url == server.url }) {
-                                            servers = servers + server
-                                        }
-                                    },
-                                    onFinished = { discovering = false }
-                                )
-                            },
-                            enabled = !discovering
-                        ) {
-                            Text(if (discovering) "Recherche…" else "Détecter sur le réseau")
-                        }
-                        if (discovering) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        }
-                    }
-
-                    if (servers.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = "Serveurs trouvés :", fontSize = 12.sp)
-                        servers.forEach { server ->
-                            Text(
-                                text = "${server.name} — ${server.url}",
-                                color = Color.Cyan,
-                                fontSize = 14.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        serverUrl = server.url
-                                        settings.serverUrl = server.url
-                                    }
-                                    .padding(vertical = 6.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Authentification", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { showLogin = true }) {
-                            Text("Connexion Home Assistant")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
-                                if (!text.isNullOrBlank()) {
-                                    accessToken = text
-                                    settings.accessToken = text
-                                    settings.refreshToken = ""
-                                    settings.accessTokenExpiresAt = 0L
+        item {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        servers = emptyList()
+                        discovering = true
+                        discovery.start(
+                            durationMs = 8000,
+                            onFound = { server ->
+                                if (servers.none { it.url == server.url }) {
+                                    servers = servers + server
                                 }
-                            }
-                        ) {
-                            Text("Coller un token")
-                        }
+                            },
+                            onFinished = { discovering = false }
+                        )
+                    },
+                    enabled = !discovering
+                ) {
+                    Text(if (discovering) "Recherche…" else "Détecter sur le réseau")
+                }
+                if (discovering) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            }
+        }
+
+        if (servers.isNotEmpty()) {
+            item { Text(text = "Serveurs trouvés :", fontSize = 12.sp, color = Color.LightGray) }
+            items(servers, key = { it.url }) { server ->
+                Text(
+                    text = "${server.name} — ${server.url}",
+                    color = Color.Cyan,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onServerUrlChange(server.url) }
+                        .padding(vertical = 8.dp)
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = "Authentification", fontWeight = FontWeight.Bold, color = Color.White)
+        }
+
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { showLogin = true }) { Text("Connexion Home Assistant") }
+                OutlinedButton(
+                    onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val text = cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
+                        if (!text.isNullOrBlank()) onAccessTokenChange(text)
                     }
+                ) {
+                    Text("Coller un token")
+                }
+            }
+        }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = accessToken,
-                        onValueChange = {
-                            accessToken = it.trim()
-                            settings.accessToken = accessToken
-                            settings.refreshToken = ""
-                            settings.accessTokenExpiresAt = 0L
-                        },
-                        label = { Text("Long-Lived Access Token (optionnel)") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        text = if (settings.canRefresh) "Session OAuth active (rafraîchissement automatique)"
-                        else "Pas de session OAuth : token manuel",
-                        fontSize = 12.sp,
-                        color = if (settings.canRefresh) Color.Green else Color.Gray
-                    )
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (accessToken.isBlank()) {
+                        "Aucun token enregistré"
+                    } else {
+                        "Token enregistré (${accessToken.take(6)}…)"
+                    },
+                    color = Color.LightGray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedButton(onClick = { editingToken = true }) { Text("Saisir un token") }
+            }
+        }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = statusMessage,
-                        fontSize = 12.sp,
-                        color = if (isConnected) Color.Green else Color.Yellow
-                    )
+        item {
+            Text(
+                text = if (settings.canRefresh) {
+                    "Session OAuth active (rafraîchissement automatique)"
+                } else {
+                    "Pas de session OAuth : token manuel, sans expiration connue"
+                },
+                fontSize = 12.sp,
+                color = if (settings.canRefresh) Color.Green else Color.Gray
+            )
+            Text(
+                text = statusMessage,
+                fontSize = 12.sp,
+                color = if (isConnected) Color.Green else Color.Yellow
+            )
+        }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(text = "Sélection des éléments à afficher sur le Dashboard :", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-                        items(entities) { entity ->
-                            val isSelected = selectedEntities.contains(entity.entityId)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedEntities = if (isSelected) {
-                                            selectedEntities - entity.entityId
-                                        } else {
-                                            selectedEntities + entity.entityId
-                                        }
-                                        settings.saveSelectedEntities(selectedEntities)
-                                    }
-                                    .padding(8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "${entity.name} (${entity.entityId})",
-                                    color = Color.White,
-                                    fontSize = 14.sp
-                                )
-                                Checkbox(
-                                    checked = isSelected,
-                                    onCheckedChange = { checked ->
-                                        selectedEntities = if (checked) {
-                                            selectedEntities + entity.entityId
-                                        } else {
-                                            selectedEntities - entity.entityId
-                                        }
-                                        settings.saveSelectedEntities(selectedEntities)
-                                    }
-                                )
-                            }
-                        }
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Dashboard : ${entities.count { selectedEntities.contains(it.entityId) }} / ${entities.size}",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { onSelectionChange(entities.map { it.entityId }.toSet()) }) {
+                        Text("Tout")
+                    }
+                    TextButton(onClick = { onSelectionChange(emptySet()) }) {
+                        Text("Aucun")
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        Text(text = "Dashboard Rapide", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (!isConnected) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (entities.isEmpty()) {
+            item {
                 Text(
-                    text = "Veuillez configurer le serveur et vous connecter dans le menu de configuration.",
-                    color = Color.Gray
+                    text = "Aucune entité reçue pour le moment.",
+                    color = Color.Gray,
+                    fontSize = 14.sp
                 )
             }
         } else {
-            val displayEntities = entities.filter { selectedEntities.contains(it.entityId) }
-            if (displayEntities.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Aucun élément sélectionné. Ouvrez 'Configuration & Sélection' pour en choisir.",
-                        color = Color.Yellow
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(displayEntities) { entity ->
-                        EntityCard(entity, api)
+            items(entities, key = { it.entityId }) { entity ->
+                EntitySelectRow(
+                    entity = entity,
+                    selected = selectedEntities.contains(entity.entityId),
+                    onToggle = { checked ->
+                        onSelectionChange(
+                            if (checked) selectedEntities + entity.entityId
+                            else selectedEntities - entity.entityId
+                        )
                     }
-                }
+                )
             }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(4.dp))
+            UpdateSection()
         }
     }
 
@@ -359,20 +418,194 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
             serverUrl = serverUrl,
             settingsManager = settings,
             onAuthenticated = { token ->
-                accessToken = token
-                statusMessage = "Authentification réussie"
+                onAccessTokenChange(token)
                 showLogin = false
             },
             onDismiss = { showLogin = false }
         )
+    }
+
+    if (editingUrl) {
+        EditFieldDialog(
+            title = "URL Home Assistant",
+            initialValue = serverUrl,
+            secret = false,
+            onSave = { onServerUrlChange(it.trim()) },
+            onDismiss = { editingUrl = false }
+        )
+    }
+
+    if (editingToken) {
+        EditFieldDialog(
+            title = "Long-Lived Access Token",
+            initialValue = "",
+            secret = true,
+            onSave = { if (it.isNotBlank()) onAccessTokenChange(it.trim()) },
+            onDismiss = { editingToken = false }
+        )
+    }
+}
+
+@Composable
+fun EntitySelectRow(entity: HAEntity, selected: Boolean, onToggle: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle(!selected) }
+            .padding(vertical = 4.dp, horizontal = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = entity.name, color = Color.White, fontSize = 15.sp)
+            Text(
+                text = "${entity.entityId} · ${entity.state}",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        Checkbox(checked = selected, onCheckedChange = onToggle)
+    }
+}
+
+@Composable
+fun UpdateSection() {
+    val context = LocalContext.current
+    val updater = remember { Updater(context) }
+    var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var checking by remember { mutableStateOf(false) }
+
+    val check: () -> Unit = {
+        checking = true
+        message = null
+        updater.check(BuildConfig.VERSION_CODE) { info ->
+            checking = false
+            update = info
+            if (info == null) message = "Application à jour"
+        }
+    }
+
+    LaunchedEffect(Unit) { check() }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                color = Color.LightGray,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(onClick = check, enabled = !checking) {
+                Text(if (checking) "Vérification…" else "Vérifier les mises à jour")
+            }
+        }
+
+        val available = update
+        if (available != null) {
+            Button(
+                onClick = { updater.downloadAndInstall(available) { state -> message = state } },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Mettre à jour vers ${available.versionName}")
+            }
+        }
+
+        message?.let {
+            Text(text = it, fontSize = 12.sp, color = Color.Yellow)
+        }
+    }
+}
+
+/**
+ * Saisie volontairement explicite : sur une TV, un champ texte qui prend le
+ * focus ouvre le clavier virtuel. Ici le clavier n'apparaît qu'après une action
+ * de l'utilisateur (ouverture de la boîte de dialogue).
+ */
+@Composable
+fun EditFieldDialog(
+    title: String,
+    initialValue: String,
+    secret: Boolean,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var value by remember { mutableStateOf(initialValue) }
+    val focusRequester = remember { FocusRequester() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                singleLine = true,
+                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value) }) { Text("Enregistrer") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+}
+
+@Composable
+fun DashboardPane(
+    modifier: Modifier = Modifier,
+    api: HomeAssistantApi,
+    entities: List<HAEntity>,
+    selectedEntities: Set<String>,
+    isConnected: Boolean
+) {
+    if (!isConnected) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "Veuillez configurer le serveur et vous connecter dans les réglages.",
+                color = Color.Gray
+            )
+        }
+        return
+    }
+
+    val displayEntities = entities.filter { selectedEntities.contains(it.entityId) }
+    if (displayEntities.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "Aucun élément sélectionné. Ouvrez 'Réglages' pour en choisir.",
+                color = Color.Yellow
+            )
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(displayEntities, key = { it.entityId }) { entity ->
+            EntityCard(entity, api)
+        }
     }
 }
 
 /**
  * Ouvre la page de login de Home Assistant dans une WebView intégrée : une fois
  * l'utilisateur connecté, les jetons OAuth que le frontend stocke dans
- * `localStorage.hassTokens` sont récupérés puis enregistrés. Plus besoin de
- * recopier un long-lived token sur la Shield.
+ * `localStorage.hassTokens` sont récupérés puis enregistrés.
  */
 @Composable
 fun LoginDialog(
@@ -424,7 +657,6 @@ fun LoginDialog(
         onDispose { webView?.destroy() }
     }
 
-    // Après login, le frontend stocke ses jetons dans localStorage["hassTokens"].
     LaunchedEffect(serverUrl) {
         val js = "(function(){try{return window.localStorage.getItem('hassTokens')||'';}catch(e){return '';}})()"
         repeat(120) {
@@ -445,7 +677,6 @@ private suspend fun readHassTokens(view: WebView, js: String): String? =
             if (continuation.isActive) continuation.resume(result)
         }
     }
-
 
 /** Décode la valeur renvoyée par evaluateJavascript (chaîne JSON échappée). */
 private fun parseHassTokens(raw: String?): JSONObject? {
