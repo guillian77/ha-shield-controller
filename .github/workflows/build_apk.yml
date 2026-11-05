@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -39,3 +42,20 @@ jobs:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
         if-no-files-found: error
+
+    # URL de téléchargement directe et stable, utilisable dans Downloader :
+    # https://github.com/guillian77/ha-shield-controller/releases/latest/download/app-debug.apk
+    - name: Publish APK to the "latest" release
+      if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: Dernier build (debug)
+        body: |
+          APK debug construit automatiquement depuis `main` (commit ${{ github.sha }}).
+
+          Lien direct : https://github.com/guillian77/ha-shield-controller/releases/latest/download/app-debug.apk
+        prerelease: true
+        make_latest: true
+        files: app/build/outputs/apk/debug/app-debug.apk
+        overwrite_files: true
