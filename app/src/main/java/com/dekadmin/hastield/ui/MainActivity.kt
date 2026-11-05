@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,7 +25,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -57,6 +60,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -833,23 +837,31 @@ fun EntityCard(entity: HAEntity, api: HomeAssistantApi) {
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF2D2D2D))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = entity.name,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(text = "État: ${entity.state}", fontSize = 14.sp, color = Color.LightGray)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = entity.name,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                val detail = if (entity.type == "thermostat") {
+                    val current = entity.attributes.asDouble("current_temperature")
+                    "État: ${entity.state} · Actuel ${formatTemp(current)}°C"
+                } else {
+                    "État: ${entity.state}"
                 }
+                Text(text = detail, fontSize = 14.sp, color = Color.LightGray)
+            }
 
-                if (entity.type == "light") {
+            when (entity.type) {
+                "light" -> {
                     val isOn = entity.state == "on"
                     Switch(
                         checked = isOn,
@@ -859,10 +871,7 @@ fun EntityCard(entity: HAEntity, api: HomeAssistantApi) {
                         }
                     )
                 }
-            }
-
-            if (entity.type == "thermostat") {
-                ThermostatControls(entity, api)
+                "thermostat" -> ThermostatControls(entity, api)
             }
         }
     }
@@ -886,8 +895,8 @@ private fun formatTemp(value: Double?): String =
     if (value == null) "--" else String.format(java.util.Locale.US, "%.1f", value)
 
 /**
- * Commandes d'un thermostat : consigne via − / + et choix du preset
- * (`climate.set_temperature` et `climate.set_preset_mode`).
+ * Commandes d'un thermostat, sur une seule ligne avec le nom : − / + pour la
+ * consigne (`climate.set_temperature`) et presets (`climate.set_preset_mode`).
  */
 @Composable
 fun ThermostatControls(entity: HAEntity, api: HomeAssistantApi) {
@@ -907,75 +916,50 @@ fun ThermostatControls(entity: HAEntity, api: HomeAssistantApi) {
         api.callService("climate", "set_temperature", entity.entityId, mapOf("temperature" to next))
     }
 
-    Column(modifier = Modifier.padding(top = 12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Actuel ${formatTemp(current)}°C",
-                color = Color.LightGray,
-                fontSize = 14.sp
-            )
-            Text(
-                text = "Cible ${formatTemp(target)}°C",
-                color = Color.Cyan,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+    fun setPreset(mode: String) {
+        api.callService("climate", "set_preset_mode", entity.entityId, mapOf("preset_mode" to mode))
+    }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedButton(onClick = { setTarget(-step) }) { Text("−", fontSize = 18.sp) }
-            Text(
-                text = "${formatTemp(target)}°C",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-            OutlinedButton(onClick = { setTarget(step) }) { Text("+", fontSize = 18.sp) }
-        }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CompactButton(label = "−", onClick = { setTarget(-step) })
+        Text(
+            text = "${formatTemp(target)}°C",
+            color = Color.White,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 72.dp)
+        )
+        CompactButton(label = "+", onClick = { setTarget(step) })
 
         if (presetModes.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(text = "Preset", fontSize = 12.sp, color = Color.LightGray)
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            LazyRow(
+                modifier = Modifier.widthIn(max = 420.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                presetModes.forEach { mode ->
-                    if (mode == activePreset) {
-                        Button(
-                            onClick = {
-                                api.callService(
-                                    "climate",
-                                    "set_preset_mode",
-                                    entity.entityId,
-                                    mapOf("preset_mode" to mode)
-                                )
-                            }
-                        ) { Text(mode) }
-                    } else {
-                        OutlinedButton(
-                            onClick = {
-                                api.callService(
-                                    "climate",
-                                    "set_preset_mode",
-                                    entity.entityId,
-                                    mapOf("preset_mode" to mode)
-                                )
-                            }
-                        ) { Text(mode) }
-                    }
+                items(presetModes, key = { it }) { mode ->
+                    CompactButton(
+                        label = mode,
+                        active = mode == activePreset,
+                        onClick = { setPreset(mode) }
+                    )
                 }
             }
         }
+    }
+}
+
+/** Bouton compact pour rester sur la hauteur d'une carte standard. */
+@Composable
+private fun CompactButton(label: String, active: Boolean = false, onClick: () -> Unit) {
+    val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+    if (active) {
+        Button(onClick = onClick, contentPadding = contentPadding) { Text(label, fontSize = 14.sp) }
+    } else {
+        OutlinedButton(onClick = onClick, contentPadding = contentPadding) { Text(label, fontSize = 14.sp) }
     }
 }
