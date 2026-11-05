@@ -31,6 +31,26 @@ jobs:
         yes | "$SDKMANAGER" --licenses > /dev/null || true
         "$SDKMANAGER" --install "platforms;android-34" "build-tools;34.0.0"
 
+    - name: Prepare signing key (optional)
+      env:
+        KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      run: |
+        if [ -n "${KEYSTORE_BASE64}" ]; then
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/release.jks"
+          {
+            echo "ANDROID_KEYSTORE_PATH=${RUNNER_TEMP}/release.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD}"
+            echo "ANDROID_KEY_ALIAS=${KEY_ALIAS}"
+            echo "ANDROID_KEY_PASSWORD=${KEY_PASSWORD}"
+          } >> "${GITHUB_ENV}"
+          echo "Signature stable activée."
+        else
+          echo "::warning::Aucun keystore (secrets ANDROID_KEYSTORE_*) : APK signé avec la clé debug éphémère du runner, les mises à jour ne pourront pas s'installer par-dessus l'ancienne version."
+        fi
+
     - name: Build debug APK with Gradle wrapper
       run: |
         chmod +x gradlew

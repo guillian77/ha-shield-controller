@@ -7,9 +7,25 @@ plugins {
 def appVersionCode = (project.findProperty("versionCode") ?: "1").toString().toInteger()
 def appVersionName = (project.findProperty("versionName") ?: "1.0").toString()
 
+// Clé de signature stable (obligatoire pour que les mises à jour s'installent
+// par-dessus l'ancienne version : une clé debug régénérée à chaque build donne
+// une signature différente et Android refuse alors la mise à jour).
+def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+
 android {
     namespace 'com.dekadmin.hastield'
     compileSdk 34
+
+    if (keystorePath) {
+        signingConfigs {
+            stable {
+                storeFile file(keystorePath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId "com.dekadmin.hastield"
@@ -24,9 +40,17 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (keystorePath) {
+                signingConfig signingConfigs.stable
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystorePath) {
+                signingConfig signingConfigs.stable
+            }
         }
     }
     compileOptions {
