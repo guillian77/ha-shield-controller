@@ -20,12 +20,13 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Install SDK platform and build-tools
+    - name: Install Android SDK packages
       run: |
-        sdkmanager --install "platforms;android-34" "build-tools;34.0.0"
+        SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+        SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+        if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+        yes | "$SDKMANAGER" --licenses > /dev/null || true
+        "$SDKMANAGER" --install "platforms;android-34" "build-tools;34.0.0"
 
     - name: Build debug APK with Gradle wrapper
       run: |
