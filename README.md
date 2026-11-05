@@ -16,7 +16,7 @@ connexion sans recopier de jeton.
 | Découverte | Recherche mDNS du service `_home-assistant._tcp.` sur le réseau local, liste des instances trouvées, sélection en un clic |
 | Authentification | Connexion via la page de login Home Assistant dans une WebView intégrée (aucun navigateur requis), ou token longue durée collé/saisi |
 | Session | Rafraîchissement automatique du jeton OAuth (30 min) et rejeu de la requête sur `401` |
-| Dashboard | Cartes des entités sélectionnées : interrupteur pour les lumières, températures actuelle/cible pour les thermostats |
+| Dashboard | Cartes des entités sélectionnées : interrupteur pour les lumières, consigne − / + et presets pour les thermostats |
 | Sélection | Choisir les entités affichées, avec compteur et raccourcis « Tout » / « Aucun » |
 | Mises à jour | Détection d'une nouvelle version, téléchargement et lancement de l'installateur depuis l'application |
 | Sauvegarde | Export/import de la configuration (URL, jetons, sélection) vers un fichier JSON |

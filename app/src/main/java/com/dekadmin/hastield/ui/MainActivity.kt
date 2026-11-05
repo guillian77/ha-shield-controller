@@ -74,6 +74,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 import kotlin.coroutines.resume
@@ -832,35 +833,148 @@ fun EntityCard(entity: HAEntity, api: HomeAssistantApi) {
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF2D2D2D))
     ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entity.name,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(text = "État: ${entity.state}", fontSize = 14.sp, color = Color.LightGray)
+                }
+
+                if (entity.type == "light") {
+                    val isOn = entity.state == "on"
+                    Switch(
+                        checked = isOn,
+                        onCheckedChange = { checked ->
+                            val service = if (checked) "turn_on" else "turn_off"
+                            api.callService("light", service, entity.entityId)
+                        }
+                    )
+                }
+            }
+
+            if (entity.type == "thermostat") {
+                ThermostatControls(entity, api)
+            }
+        }
+    }
+}
+
+/** Valeurs numériques d'un attribut, quel que soit le type JSON renvoyé. */
+private fun Map<String, Any>.asDouble(key: String): Double? =
+    (this[key] as? Number)?.toDouble()
+
+private fun Map<String, Any>.asStringList(key: String): List<String> {
+    val value = this[key] ?: return emptyList()
+    return when (value) {
+        is JSONArray -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }
+        is List<*> -> value.mapNotNull { it?.toString()?.takeIf(String::isNotBlank) }
+        is String -> value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        else -> emptyList()
+    }
+}
+
+private fun formatTemp(value: Double?): String =
+    if (value == null) "--" else String.format(java.util.Locale.US, "%.1f", value)
+
+/**
+ * Commandes d'un thermostat : consigne via − / + et choix du preset
+ * (`climate.set_temperature` et `climate.set_preset_mode`).
+ */
+@Composable
+fun ThermostatControls(entity: HAEntity, api: HomeAssistantApi) {
+    val attrs = entity.attributes
+    val current = attrs.asDouble("current_temperature")
+    val target = attrs.asDouble("temperature")
+    val step = attrs.asDouble("target_temp_step") ?: 0.5
+    val minTemp = attrs.asDouble("min_temp") ?: 7.0
+    val maxTemp = attrs.asDouble("max_temp") ?: 35.0
+    val presetModes = attrs.asStringList("preset_modes")
+    val activePreset = attrs["preset_mode"] as? String
+
+    fun setTarget(delta: Double) {
+        val base = target ?: current ?: return
+        var next = kotlin.math.round((base + delta) / step) * step
+        next = next.coerceIn(minTemp, maxTemp)
+        api.callService("climate", "set_temperature", entity.entityId, mapOf("temperature" to next))
+    }
+
+    Column(modifier = Modifier.padding(top = 12.dp)) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = entity.name, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text(text = "État: ${entity.state}", fontSize = 14.sp, color = Color.LightGray)
-            }
+            Text(
+                text = "Actuel ${formatTemp(current)}°C",
+                color = Color.LightGray,
+                fontSize = 14.sp
+            )
+            Text(
+                text = "Cible ${formatTemp(target)}°C",
+                color = Color.Cyan,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
 
-            if (entity.type == "light") {
-                val isOn = entity.state == "on"
-                Switch(
-                    checked = isOn,
-                    onCheckedChange = { checked ->
-                        val service = if (checked) "turn_on" else "turn_off"
-                        api.callService("light", service, entity.entityId)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(onClick = { setTarget(-step) }) { Text("−", fontSize = 18.sp) }
+            Text(
+                text = "${formatTemp(target)}°C",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+            OutlinedButton(onClick = { setTarget(step) }) { Text("+", fontSize = 18.sp) }
+        }
+
+        if (presetModes.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = "Preset", fontSize = 12.sp, color = Color.LightGray)
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                presetModes.forEach { mode ->
+                    if (mode == activePreset) {
+                        Button(
+                            onClick = {
+                                api.callService(
+                                    "climate",
+                                    "set_preset_mode",
+                                    entity.entityId,
+                                    mapOf("preset_mode" to mode)
+                                )
+                            }
+                        ) { Text(mode) }
+                    } else {
+                        OutlinedButton(
+                            onClick = {
+                                api.callService(
+                                    "climate",
+                                    "set_preset_mode",
+                                    entity.entityId,
+                                    mapOf("preset_mode" to mode)
+                                )
+                            }
+                        ) { Text(mode) }
                     }
-                )
-            } else if (entity.type == "thermostat") {
-                val currentTemp = entity.attributes["current_temperature"] ?: "--"
-                val targetTemp = entity.attributes["temperature"] ?: "--"
-                Text(
-                    text = "Act: $currentTemp°C | Cible: $targetTemp°C",
-                    color = Color.Cyan,
-                    fontSize = 14.sp
-                )
+                }
             }
         }
     }

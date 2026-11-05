@@ -40,6 +40,7 @@ Le contexte impose trois contraintes fortes :
 - authentification OAuth via la page de login de l'instance, repli par jeton ;
 - tableau de bord des entités `light.*` et `climate.*` sélectionnées ;
 - commande d'allumage/extinction des lumières ;
+- réglage de la consigne de température et du preset des thermostats ;
 - sélection des entités affichées ;
 - vérification et installation des mises à jour de l'application ;
 - export/import de la configuration.
@@ -48,7 +49,7 @@ Le contexte impose trois contraintes fortes :
 
 - pilotage complet de Home Assistant (scènes, scripts, automatisations,
   caméras, médias) ;
-- réglage de la consigne de température (lecture seule des thermostats) ;
+- changement de mode HVAC (chauffage/clim/auto) ;
 - notification push, widgets, commande vocale ;
 - accès distant (hors LAN), HTTPS avec certificat, authentification multi-utilisateur ;
 - publication sur le Play Store.
@@ -82,7 +83,9 @@ Le contexte impose trois contraintes fortes :
 | Réf. | Règle |
 |---|---|
 | RM-1 | Seules les entités des domaines `light` et `climate` sont proposées à l'affichage. |
-| RM-2 | Une entité peut être pilotée (lumière) ou seulement consultée (thermostat). |
+| RM-2 | Une entité est pilotable : lumière → marche/arrêt ; thermostat → consigne de température et preset. |
+| RM-2b | La consigne évolue par pas de `target_temp_step`, est arrondie à ce pas et reste bornée par `min_temp` / `max_temp` (valeurs de l'entité, défaut 7–35 °C). |
+| RM-2c | Un preset n'est proposé que s'il figure dans `preset_modes` ; le preset courant est mis en évidence. |
 | RM-3 | Une lumière est considérée allumée lorsque son état est exactement `on`. |
 | RM-4 | La sélection d'entités est propre à l'appareil et persiste entre les sessions. |
 | RM-5 | L'URL du serveur et la sélection sont des données non sensibles : elles sont conservées même si le stockage sécurisé devient indisponible. |
@@ -146,13 +149,18 @@ la boîte de dialogue.
 **Description.** Affichage des entités sélectionnées sous forme de cartes.
 
 **Règles.** Nom convivial et état affichés ; lumière → interrupteur ; thermostat
-→ températures actuelle et cible en lecture seule. Rafraîchissement toutes les
-5 s. En l'absence de sélection ou de connexion, un message explicite est
-affiché.
+→ températures actuelle et cible, boutons − / + pour la consigne
+(`climate.set_temperature`) et boutons de preset (`climate.set_preset_mode`).
+Rafraîchissement toutes les 5 s. En l'absence de sélection ou de connexion, un
+message explicite est affiché.
 
 **Critères d'acceptation.**
 - l'état affiché suit une modification faite hors application en moins de 10 s ;
 - actionner l'interrupteur déclenche `light.turn_on` / `light.turn_off` ;
+- sur un thermostat, − / + modifie la consigne du pas déclaré et l'affichage
+  reste dans les bornes min/max ;
+- sélectionner un preset envoie `climate.set_preset_mode` et le preset courant
+  apparaît comme actif au rafraîchissement suivant ;
 - une erreur de connexion est signalée sans effacer la configuration.
 
 ### EF-05 — Sélection des entités
