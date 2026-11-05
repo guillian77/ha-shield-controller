@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sauvegarde automatique (Android 11 et antérieur). Seules les préférences
+     non chiffrées sont sauvegardées : le fichier chiffré est lié au Keystore de
+     l'appareil et ne serait pas lisible après restauration. -->
+<full-backup-content>
+    <include domain="sharedpref" path="ha_config.xml" />
+</full-backup-content>

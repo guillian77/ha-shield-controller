@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Règles Android 12+ : la configuration non chiffrée (URL, entités) peut être
+     restaurée ; les jetons restent liés au Keystore de l'appareil. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="ha_config.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="ha_config.xml" />
+    </device-transfer>
+</data-extraction-rules>

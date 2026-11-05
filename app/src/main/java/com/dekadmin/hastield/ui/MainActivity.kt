@@ -8,7 +8,9 @@ import android.view.KeyEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -186,6 +188,15 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
                     settings.refreshToken = ""
                     settings.accessTokenExpiresAt = 0L
                 },
+                onOAuthToken = { token ->
+                    // Les jetons (dont le refresh_token) ont déjà été écrits par HaAuth.
+                    accessToken = token
+                },
+                onImported = {
+                    serverUrl = settings.serverUrl
+                    accessToken = settings.accessToken
+                    selectedEntities = settings.getSelectedEntities()
+                },
                 isConnected = isConnected,
                 statusMessage = statusMessage
             )
@@ -212,6 +223,8 @@ fun SettingsPane(
     onServerUrlChange: (String) -> Unit,
     accessToken: String,
     onAccessTokenChange: (String) -> Unit,
+    onOAuthToken: (String) -> Unit,
+    onImported: () -> Unit,
     isConnected: Boolean,
     statusMessage: String
 ) {
@@ -222,6 +235,43 @@ fun SettingsPane(
     var showLogin by remember { mutableStateOf(false) }
     var editingUrl by remember { mutableStateOf(false) }
     var editingToken by remember { mutableStateOf(false) }
+    var storageMessage by remember { mutableStateOf<String?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            storageMessage = try {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(settings.exportJson().toByteArray())
+                }
+                "Configuration exportée"
+            } catch (e: Exception) {
+                "Échec de l'export : ${e.message}"
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            storageMessage = try {
+                val text = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    .orEmpty()
+                if (settings.importJson(text)) {
+                    onImported()
+                    "Configuration importée"
+                } else {
+                    "Fichier de configuration invalide"
+                }
+            } catch (e: Exception) {
+                "Échec de l'import : ${e.message}"
+            }
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose { discovery.stop() }
@@ -409,6 +459,43 @@ fun SettingsPane(
             Spacer(modifier = Modifier.height(4.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(4.dp))
+            Text(text = "Sauvegarde de la configuration", fontWeight = FontWeight.Bold, color = Color.White)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "L'URL et les entités sélectionnées survivent aux mises à jour. " +
+                    "Cet export sert de filet de sécurité si tu dois désinstaller l'application.",
+                fontSize = 12.sp,
+                color = Color.LightGray
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { exportLauncher.launch("ha-shield-config.json") }) {
+                    Text("Exporter")
+                }
+                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
+                    Text("Importer")
+                }
+            }
+            storageMessage?.let {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(text = it, fontSize = 12.sp, color = Color.Yellow)
+            }
+        }
+
+        if (!settings.secureStorageAvailable) {
+            item {
+                Text(
+                    text = "Stockage chiffré indisponible sur cet appareil : les jetons devront être ressaisis, le reste est conservé.",
+                    fontSize = 12.sp,
+                    color = Color.Yellow
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(4.dp))
             UpdateSection()
         }
     }
@@ -418,7 +505,7 @@ fun SettingsPane(
             serverUrl = serverUrl,
             settingsManager = settings,
             onAuthenticated = { token ->
-                onAccessTokenChange(token)
+                onOAuthToken(token)
                 showLogin = false
             },
             onDismiss = { showLogin = false }
