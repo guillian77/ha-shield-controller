@@ -349,23 +349,29 @@ fun SettingsPane(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Jamais désactivé pendant la recherche : un bouton désactivé sort
+                // de la navigation et le focus saute en haut de l'écran.
                 OutlinedButton(
                     onClick = {
-                        servers = emptyList()
-                        discovering = true
-                        discovery.start(
-                            durationMs = 8000,
-                            onFound = { server ->
-                                if (servers.none { it.url == server.url }) {
-                                    servers = servers + server
-                                }
-                            },
-                            onFinished = { discovering = false }
-                        )
-                    },
-                    enabled = !discovering
+                        if (discovering) {
+                            discovery.stop()
+                            discovering = false
+                        } else {
+                            servers = emptyList()
+                            discovering = true
+                            discovery.start(
+                                durationMs = 8000,
+                                onFound = { server ->
+                                    if (servers.none { it.url == server.url }) {
+                                        servers = servers + server
+                                    }
+                                },
+                                onFinished = { discovering = false }
+                            )
+                        }
+                    }
                 ) {
-                    Text(if (discovering) "Recherche…" else "Détecter sur le réseau")
+                    Text(if (discovering) "Arrêter la recherche" else "Détecter sur le réseau")
                 }
                 if (discovering) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -623,7 +629,7 @@ fun UpdateSection() {
                 fontSize = 13.sp,
                 modifier = Modifier.weight(1f)
             )
-            OutlinedButton(onClick = check, enabled = !checking) {
+            OutlinedButton(onClick = check) {
                 Text(if (checking) "Vérification…" else "Vérifier les mises à jour")
             }
         }
