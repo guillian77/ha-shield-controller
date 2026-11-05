@@ -1,12 +1,16 @@
-
 package com.dekadmin.hastield.ha
 
-import okhttp3.*
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 data class HAEntity(
     val entityId: String,
@@ -17,27 +21,60 @@ data class HAEntity(
 )
 
 class HomeAssistantApi(private val settings: SettingsManager) {
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .build()
 
-    fun fetchEntities(callback: (List<HAEntity>) -> Unit) {
-        val url = "${settings.serverUrl.trimEnd('/')}/api/states"
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer ${settings.accessToken}")
-            .addHeader("Content-Type", "application/json")
-            .build()
+    val auth = HaAuth(settings)
 
-        client.newCall(request).enqueue(object : Callback {
+    /**
+     * Exécute une requête. En cas de 401 et si un refresh_token est disponible,
+     * le jeton est rafraîchi puis la requête rejouée une fois.
+     */
+    private fun execute(
+        retried: Boolean = false,
+        buildRequest: () -> Request,
+        callback: (Response?) -> Unit
+    ) {
+        client.newCall(buildRequest()).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                callback(emptyList())
+                callback(null)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                if (!response.isSuccessful) {
-                    callback(emptyList())
+                if (response.code == 401 && !retried && settings.canRefresh) {
+                    response.close()
+                    auth.refresh { ok ->
+                        if (ok) execute(true, buildRequest, callback) else callback(null)
+                    }
                     return
                 }
-                val body = response.body?.string() ?: "[]"
+                callback(response)
+            }
+        })
+    }
+
+    private fun authorized(builder: Request.Builder): Request.Builder = builder
+        .addHeader("Authorization", "Bearer ${settings.accessToken}")
+        .addHeader("Content-Type", "application/json")
+
+    fun fetchEntities(callback: (List<HAEntity>?) -> Unit) {
+        execute(
+            buildRequest = {
+                authorized(Request.Builder().url("${settings.serverUrl.trimEnd('/')}/api/states")).build()
+            }
+        ) { response ->
+            if (response == null) {
+                callback(null)
+                return@execute
+            }
+            response.use { resp ->
+                if (!resp.isSuccessful) {
+                    callback(null)
+                    return@use
+                }
+                val body = resp.body?.string() ?: "[]"
                 try {
                     val jsonArray = JSONArray(body)
                     val list = mutableListOf<HAEntity>()
@@ -49,7 +86,7 @@ class HomeAssistantApi(private val settings: SettingsManager) {
                             val attrObj = obj.getJSONObject("attributes")
                             val name = attrObj.optString("friendly_name", entityId)
                             val type = if (entityId.startsWith("light.")) "light" else "thermostat"
-                            
+
                             val attrs = mutableMapOf<String, Any>()
                             val keys = attrObj.keys()
                             while (keys.hasNext()) {
@@ -62,14 +99,18 @@ class HomeAssistantApi(private val settings: SettingsManager) {
                     }
                     callback(list)
                 } catch (e: Exception) {
-                    callback(emptyList())
+                    callback(null)
                 }
             }
-        })
+        }
     }
 
-    fun callService(domain: String, service: String, entityId: String, extraData: Map<String, Any> = emptyMap()) {
-        val url = "${settings.serverUrl.trimEnd('/')}/api/services/$domain/$service"
+    fun callService(
+        domain: String,
+        service: String,
+        entityId: String,
+        extraData: Map<String, Any> = emptyMap()
+    ) {
         val json = JSONObject().apply {
             put("entity_id", entityId)
             for ((k, v) in extraData) {
@@ -77,18 +118,15 @@ class HomeAssistantApi(private val settings: SettingsManager) {
             }
         }
         val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer ${settings.accessToken}")
-            .addHeader("Content-Type", "application/json")
-            .post(body)
-            .build()
 
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {}
-            override fun onResponse(call: Call, response: Response) {
-                response.close()
+        execute(
+            buildRequest = {
+                authorized(
+                    Request.Builder()
+                        .url("${settings.serverUrl.trimEnd('/')}/api/services/$domain/$service")
+                        .post(body)
+                ).build()
             }
-        })
+        ) { response -> response?.close() }
     }
 }
