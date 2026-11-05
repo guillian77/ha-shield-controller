@@ -1,4 +1,3 @@
-
 package com.dekadmin.hastield.ha
 
 import android.content.Context
@@ -19,13 +18,13 @@ class SettingsManager(context: Context) {
     )
 
     var serverUrl: String
-        get() = sharedPreferences.getString("server_url", "http://homeassistant.local:8123") ?: "http://homeassistant.local:8123"
+        get() = sharedPreferences.getString("server_url", "http://homeassistant.local:8123")
+            ?: "http://homeassistant.local:8123"
         set(value) = sharedPreferences.edit().putString("server_url", value).apply()
 
     var accessToken: String
         get() = sharedPreferences.getString("access_token", "") ?: ""
         set(value) = sharedPreferences.edit().putString("access_token", value).apply()
-}
 
     fun getSelectedEntities(): Set<String> {
         return sharedPreferences.getStringSet("selected_entities", emptySet()) ?: emptySet()
@@ -34,3 +33,4 @@ class SettingsManager(context: Context) {
     fun saveSelectedEntities(entities: Set<String>) {
         sharedPreferences.edit().putStringSet("selected_entities", entities).apply()
     }
+}

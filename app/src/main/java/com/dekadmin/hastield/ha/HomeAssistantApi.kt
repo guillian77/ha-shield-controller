@@ -8,7 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
-data.class HAEntity(
+data class HAEntity(
     val entityId: String,
     val name: String,
     val state: String,
