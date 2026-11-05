@@ -8,6 +8,7 @@ import android.view.KeyEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -122,6 +123,10 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
     var isConnected by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("Configuration requise") }
     var showConfig by remember { mutableStateOf(false) }
+
+    // Retour : quitte les réglages pour revenir au dashboard au lieu de
+    // fermer l'activité.
+    BackHandler(enabled = showConfig) { showConfig = false }
 
     val context = LocalContext.current
     val updater = remember { Updater(context) }
