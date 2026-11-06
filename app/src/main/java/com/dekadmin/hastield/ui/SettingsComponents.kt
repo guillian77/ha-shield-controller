@@ -141,10 +141,6 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
-        if (update != null) {
-            item { UpdateBanner(update, onInstallUpdate) }
-        }
-
         item {
             ConnectionCard(
                 serverUrl = serverUrl,
@@ -634,37 +630,3 @@ private fun UpdateCard(
     }
 }
 
-/** Bandeau d'alerte en haut des réglages quand une version est disponible. */
-@Composable
-private fun UpdateBanner(update: UpdateInfo, onInstall: (UpdateInfo) -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = AppColors.accent.copy(alpha = 0.14f),
-        border = BorderStroke(1.dp, AppColors.accent.copy(alpha = 0.6f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Mise à jour disponible",
-                    color = AppColors.textPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Version ${update.versionName} (actuelle : ${BuildConfig.VERSION_NAME})",
-                    color = AppColors.textSecondary,
-                    fontSize = 12.sp
-                )
-            }
-            Button(onClick = { onInstall(update) }) {
-                Text("Installer")
-            }
-        }
-    }
-}
