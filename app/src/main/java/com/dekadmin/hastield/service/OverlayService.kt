@@ -103,6 +103,8 @@ class OverlayService : Service() {
 
     private val rows = mutableListOf<Row>()
     private var selectedIndex = 0
+    private var selectedEntityId: String? = null
+    private var lastSignature: String? = null
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -270,18 +272,29 @@ class OverlayService : Service() {
                 }
                 loadedOnce = true
                 val entities = fetched.filter { wanted.contains(it.entityId) }
-                container.removeAllViews()
-                rows.clear()
                 if (entities.isEmpty()) {
+                    container.removeAllViews()
+                    rows.clear()
+                    lastSignature = null
                     container.addView(label("Entités introuvables (${wanted.size} demandée(s))", 0xFF9BA1AA.toInt()))
                     return@post
                 }
-                selectedIndex = 0
+
+                // Reconstruire la vue à chaque cycle remettait la sélection sur la
+                // première ligne : on ne le fait que si l'ensemble a changé.
+                val signature = entities.joinToString("|") { "${it.entityId}=${it.state}" }
+                if (signature == lastSignature && rows.isNotEmpty()) return@post
+                lastSignature = signature
+
+                container.removeAllViews()
+                rows.clear()
                 entities.forEach { entity ->
                     val holder = row(entity)
                     rows.add(holder)
                     container.addView(holder.root)
                 }
+                val kept = rows.indexOfFirst { it.entity.entityId == selectedEntityId }
+                selectedIndex = if (kept >= 0) kept else 0
                 applyHighlight()
             }
         }
@@ -304,17 +317,28 @@ class OverlayService : Service() {
             textSize = 16f
         })
         texts.addView(TextView(ui).apply {
-            text = if (entity.type == "light") {
-                if (entity.state == "on") "Allumée" else "Éteinte"
-            } else {
-                val current = entity.attributes["current_temperature"]
-                val target = entity.attributes["temperature"]
-                "Actuel $current°C · cible $target°C"
+            text = when (entity.type) {
+                "light" -> if (entity.state == "on") "Allumée" else "Éteinte"
+                "script" -> if (entity.state == "on") "En cours d'exécution" else "Prêt"
+                else -> {
+                    val current = entity.attributes["current_temperature"]
+                    val target = entity.attributes["temperature"]
+                    "Actuel $current°C · cible $target°C"
+                }
             }
             setTextColor(0xFF9BA1AA.toInt())
             textSize = 12f
         })
         line.addView(texts)
+
+        if (entity.type == "script") {
+            line.addView(TextView(ui).apply {
+                text = if (entity.state == "on") "…" else "▶"
+                setTextColor(0xFF3E8EF7.toInt())
+                textSize = 18f
+                setPadding(dp(8), 0, dp(4), 0)
+            })
+        }
 
         var switch: Switch? = null
         if (entity.type == "light") {
@@ -343,6 +367,7 @@ class OverlayService : Service() {
 
     /** Met en évidence la ligne sélectionnée à la télécommande. */
     private fun applyHighlight() {
+        selectedEntityId = rows.getOrNull(selectedIndex)?.entity?.entityId
         rows.forEachIndexed { index, item ->
             item.root.background = if (index == selectedIndex) {
                 rounded(0xFF23324A.toInt(), 0xFF3E8EF7.toInt())
@@ -370,8 +395,13 @@ class OverlayService : Service() {
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                 val item = rows.getOrNull(selectedIndex) ?: return
-                val toggle = item.toggle ?: return
-                toggle.isChecked = !toggle.isChecked
+                val toggle = item.toggle
+                if (toggle != null) {
+                    toggle.isChecked = !toggle.isChecked
+                } else if (item.entity.type == "script") {
+                    api.callService("script", "turn_on", item.entity.entityId)
+                    handler.postDelayed({ refresh() }, 800)
+                }
             }
             KeyEvent.KEYCODE_BACK -> hide()
         }

@@ -247,6 +247,32 @@ fun ClimateCard(entity: HAEntity, api: HomeAssistantApi) {
 }
 
 @Composable
+fun ScriptCard(entity: HAEntity, api: HomeAssistantApi) {
+    EntitySurface {
+        EntityBadge(iconRes = R.drawable.ic_entity_script, tint = AppColors.accent)
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = entity.name,
+                color = AppColors.textPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = if (entity.state == "on") "En cours d'exécution" else "Prêt",
+                color = AppColors.textSecondary,
+                fontSize = 12.sp
+            )
+        }
+        PillButton(
+            label = "Exécuter",
+            active = false,
+            onClick = { api.callService("script", "turn_on", entity.entityId) }
+        )
+    }
+}
+
+@Composable
 private fun TempBadge(text: String) {
     Surface(
         shape = RoundedCornerShape(12.dp),

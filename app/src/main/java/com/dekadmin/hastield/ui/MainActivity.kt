@@ -394,6 +394,9 @@ fun DashboardPane(
     val lights = displayEntities
         .filter { it.type == "light" }
         .sortedWith(entityComparator(order))
+    val scripts = displayEntities
+        .filter { it.type == "script" }
+        .sortedWith(entityComparator(order))
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -410,6 +413,12 @@ fun DashboardPane(
             item { SectionHeader("Éclairage", R.drawable.ic_entity_light) }
             items(lights, key = { it.entityId }) { entity ->
                 LightCard(entity, api)
+            }
+        }
+        if (scripts.isNotEmpty()) {
+            item { SectionHeader("Scripts", R.drawable.ic_entity_script) }
+            items(scripts, key = { it.entityId }) { entity ->
+                ScriptCard(entity, api)
             }
         }
     }

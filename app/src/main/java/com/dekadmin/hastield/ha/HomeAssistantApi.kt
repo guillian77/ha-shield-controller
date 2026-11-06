@@ -81,11 +81,11 @@ class HomeAssistantApi(private val settings: SettingsManager) {
                     for (i in 0 until jsonArray.length()) {
                         val obj = jsonArray.getJSONObject(i)
                         val entityId = obj.getString("entity_id")
-                        if (entityId.startsWith("light.") || entityId.startsWith("climate.")) {
+                        val type = EntityKind.of(entityId) ?: continue
+                        run {
                             val state = obj.getString("state")
                             val attrObj = obj.getJSONObject("attributes")
                             val name = attrObj.optString("friendly_name", entityId)
-                            val type = if (entityId.startsWith("light.")) "light" else "thermostat"
 
                             val attrs = mutableMapOf<String, Any>()
                             val keys = attrObj.keys()
