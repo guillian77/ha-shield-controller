@@ -239,21 +239,10 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val available = updateInfo
-                if (available != null) {
-                    Button(onClick = { installUpdate(available) }) {
-                        Text("Mettre à jour ${available.versionName}")
-                    }
-                }
                 Button(onClick = { showConfig = !showConfig }) {
                     Text(if (showConfig) "Retour au dashboard" else "Réglages")
                 }
             }
-        }
-
-        updateMessage?.let {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = it, fontSize = 12.sp, color = Color.Yellow)
         }
 
         Spacer(modifier = Modifier.height(12.dp))
