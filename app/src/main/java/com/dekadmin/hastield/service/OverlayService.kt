@@ -6,7 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
+import android.content.res.ColorStateList
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -22,6 +23,8 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
+import com.dekadmin.hastield.R
 import com.dekadmin.hastield.ha.HAEntity
 import com.dekadmin.hastield.ha.HomeAssistantApi
 import com.dekadmin.hastield.ha.SettingsManager
@@ -29,6 +32,10 @@ import com.dekadmin.hastield.ha.SettingsManager
 /**
  * Overlay flottant affichant quelques entités par-dessus l'application au premier
  * plan. Ouvert et fermé par la touche configurée (voir [HaKeyService]).
+ *
+ * Les vues sont créées avec le thème sombre de l'application : un service
+ * n'hérite d'aucun thème et produirait sinon des widgets clairs (switch gris,
+ * texte noir) sur un panneau sombre.
  */
 class OverlayService : Service() {
 
@@ -69,8 +76,11 @@ class OverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private lateinit var settings: SettingsManager
     private lateinit var api: HomeAssistantApi
+    private lateinit var ui: Context
+
     private var overlayView: View? = null
     private var rowsContainer: LinearLayout? = null
+    private var loadedOnce = false
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -85,6 +95,7 @@ class OverlayService : Service() {
         settings = SettingsManager(this)
         api = HomeAssistantApi(settings)
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        ui = ContextThemeWrapper(this, R.style.Theme_HAShieldController)
         createChannel()
     }
 
@@ -109,18 +120,20 @@ class OverlayService : Service() {
     private fun show() {
         if (overlayView != null) return
         if (!Settings.canDrawOverlays(this)) {
-            android.widget.Toast.makeText(
+            Toast.makeText(
                 this,
                 "Autorise « Affichage par-dessus les autres applications » pour HA Shield Control",
-                android.widget.Toast.LENGTH_LONG
+                Toast.LENGTH_LONG
             ).show()
             stopSelf()
             return
         }
+
         val view = buildOverlay()
         overlayView = view
+
         val params = WindowManager.LayoutParams(
-            dp(460),
+            overlayWidth(),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -128,13 +141,19 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = dp(24)
-            y = dp(24)
+            x = dp(32)
+            y = dp(32)
         }
+
         windowManager.addView(view, params)
         view.requestFocus()
         refresh()
         handler.postDelayed(refreshRunnable, REFRESH_MS)
+    }
+
+    private fun overlayWidth(): Int {
+        val screenWidth = resources.displayMetrics.widthPixels
+        return (screenWidth * 0.42f).toInt().coerceIn(dp(300), dp(460))
     }
 
     private fun hide() {
@@ -153,13 +172,14 @@ class OverlayService : Service() {
         }
         overlayView = null
         rowsContainer = null
+        loadedOnce = false
     }
 
     private fun buildOverlay(): View {
-        val root = LinearLayout(this).apply {
+        val root = LinearLayout(ui).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(0xF21A1C21.toInt(), 0xFF3E8EF7.toInt())
-            setPadding(dp(18), dp(14), dp(18), dp(16))
+            background = rounded(0xFF14161B.toInt(), 0xFF3E8EF7.toInt())
+            setPadding(dp(20), dp(16), dp(20), dp(18))
             isFocusable = true
             isFocusableInTouchMode = true
             setOnKeyListener { _, keyCode, event ->
@@ -172,69 +192,80 @@ class OverlayService : Service() {
             }
         }
 
-        root.addView(TextView(this).apply {
+        root.addView(TextView(ui).apply {
             text = "Home Assistant"
             setTextColor(0xFFF3F4F6.toInt())
-            textSize = 18f
+            textSize = 19f
             setTypeface(typeface, Typeface.BOLD)
         })
 
-        root.addView(TextView(this).apply {
+        root.addView(TextView(ui).apply {
             text = "Retour pour fermer"
             setTextColor(0xFF9BA1AA.toInt())
-            textSize = 11f
-            setPadding(0, dp(2), 0, dp(8))
+            textSize = 12f
+            setPadding(0, dp(2), 0, dp(10))
         })
 
-        rowsContainer = LinearLayout(this).apply {
+        rowsContainer = LinearLayout(ui).apply {
             orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         }
         root.addView(rowsContainer)
-
         return root
     }
 
     private fun refresh() {
         val container = rowsContainer ?: return
         val wanted = settings.effectiveOverlayEntities()
+
         if (wanted.isEmpty()) {
             container.removeAllViews()
-            container.addView(label("Aucune entité sélectionnée pour l'overlay", 0xFF9BA1AA.toInt()))
+            container.addView(label("Aucune entité sélectionnée pour l'overlay", 0xFFFFC24B.toInt()))
             return
+        }
+
+        if (!loadedOnce) {
+            container.removeAllViews()
+            container.addView(label("Chargement…", 0xFF9BA1AA.toInt()))
         }
 
         api.fetchEntities { fetched ->
             if (fetched == null) {
                 container.removeAllViews()
-                container.addView(label("Connexion impossible", 0xFFFFC24B.toInt()))
+                container.addView(label("Connexion impossible — vérifie la session", 0xFFFFC24B.toInt()))
                 return@fetchEntities
             }
-            container.removeAllViews()
+            loadedOnce = true
             val entities = fetched.filter { wanted.contains(it.entityId) }
+            container.removeAllViews()
             if (entities.isEmpty()) {
-                container.addView(label("Entités indisponibles", 0xFF9BA1AA.toInt()))
+                container.addView(label("Entités introuvables (${wanted.size} demandée(s))", 0xFF9BA1AA.toInt()))
+                return@fetchEntities
             }
-            entities.forEach { container.addView(row(it)) }
+            entities.forEach { entity -> container.addView(row(entity)) }
         }
     }
 
     private fun row(entity: HAEntity): View {
-        val row = LinearLayout(this).apply {
+        val row = LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(8), 0, dp(8))
+            setPadding(0, dp(9), 0, dp(9))
         }
 
-        val texts = LinearLayout(this).apply {
+        val texts = LinearLayout(ui).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        texts.addView(TextView(this).apply {
+        texts.addView(TextView(ui).apply {
             text = entity.name
             setTextColor(0xFFF3F4F6.toInt())
-            textSize = 15f
+            textSize = 16f
         })
-        texts.addView(TextView(this).apply {
+        texts.addView(TextView(ui).apply {
             text = if (entity.type == "light") {
                 if (entity.state == "on") "Allumée" else "Éteinte"
             } else {
@@ -248,9 +279,13 @@ class OverlayService : Service() {
         row.addView(texts)
 
         if (entity.type == "light") {
-            val isOn = entity.state == "on"
-            val toggle = Switch(this).apply {
-                isChecked = isOn
+            val toggle = Switch(ui).apply {
+                isChecked = entity.state == "on"
+                thumbTintList = ColorStateList.valueOf(0xFFFFFFFF.toInt())
+                trackTintList = ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(0xFF3E8EF7.toInt(), 0xFF2F333C.toInt())
+                )
                 setOnCheckedChangeListener { _, checked ->
                     api.callService(
                         "light",
@@ -266,7 +301,7 @@ class OverlayService : Service() {
         return row
     }
 
-    private fun label(text: String, color: Int): TextView = TextView(this).apply {
+    private fun label(text: String, color: Int): TextView = TextView(ui).apply {
         this.text = text
         setTextColor(color)
         textSize = 13f
@@ -275,7 +310,7 @@ class OverlayService : Service() {
 
     private fun rounded(fill: Int, stroke: Int): GradientDrawable =
         GradientDrawable().apply {
-            cornerRadius = dp(20).toFloat()
+            cornerRadius = dp(22).toFloat()
             setColor(fill)
             setStroke(dp(1), stroke)
         }
@@ -291,8 +326,7 @@ class OverlayService : Service() {
                 NotificationManager.IMPORTANCE_MIN
             )
             channel.setShowBadge(false)
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
