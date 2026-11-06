@@ -34,6 +34,15 @@ class HaKeyService : AccessibilityService() {
          * passer les événements, sinon il consomme la touche déjà configurée et
          * l'activité de capture ne reçoit plus rien.
          */
+        private val OVERLAY_KEYS = setOf(
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_BACK
+        )
+
         @Volatile
         var captureActive: Boolean = false
     }
@@ -76,6 +85,16 @@ class HaKeyService : AccessibilityService() {
 
         val s = settings ?: return false
         val configured = s.overlayKeyCode
+
+        // Overlay ouvert : la fenêtre flottante ne prend pas toujours le focus
+        // clavier, on lui transmet donc la navigation.
+        if (OverlayService.isShowing && event.keyCode != configured && event.keyCode in OVERLAY_KEYS) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                OverlayService.handleKey(event.keyCode)
+            }
+            return true
+        }
+
         if (configured == 0 || event.keyCode != configured) return false
 
         when (s.overlayGesture) {

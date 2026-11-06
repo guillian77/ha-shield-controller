@@ -68,6 +68,22 @@ class OverlayService : Service() {
             }
         }
 
+        /** Vrai tant que le panneau est affiché. */
+        @Volatile
+        var isShowing: Boolean = false
+            private set
+
+        /**
+         * Les fenêtres d'overlay ne reçoivent pas toujours le focus clavier sur
+         * Android TV : les touches de navigation sont donc transmises par le
+         * service d'accessibilité, qui les voit de toute façon.
+         */
+        fun handleKey(keyCode: Int): Boolean {
+            val service = instance ?: return false
+            service.onExternalKey(keyCode)
+            return true
+        }
+
         @Volatile
         private var instance: OverlayService? = null
     }
@@ -81,6 +97,12 @@ class OverlayService : Service() {
     private var overlayView: View? = null
     private var rowsContainer: LinearLayout? = null
     private var loadedOnce = false
+
+    /** Lignes affichées, avec l'interrupteur associé, pour la navigation. */
+    private class Row(val root: View, val toggle: Switch?, val entity: HAEntity)
+
+    private val rows = mutableListOf<Row>()
+    private var selectedIndex = 0
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -146,6 +168,7 @@ class OverlayService : Service() {
         }
 
         windowManager.addView(view, params)
+        isShowing = true
         view.requestFocus()
         refresh()
         handler.postDelayed(refreshRunnable, REFRESH_MS)
@@ -173,6 +196,9 @@ class OverlayService : Service() {
         overlayView = null
         rowsContainer = null
         loadedOnce = false
+        isShowing = false
+        rows.clear()
+        selectedIndex = 0
     }
 
     private fun buildOverlay(): View {
@@ -200,7 +226,7 @@ class OverlayService : Service() {
         })
 
         root.addView(TextView(ui).apply {
-            text = "Retour pour fermer"
+            text = "▲▼ sélectionner · OK basculer · Retour fermer"
             setTextColor(0xFF9BA1AA.toInt())
             textSize = 12f
             setPadding(0, dp(2), 0, dp(10))
@@ -245,17 +271,24 @@ class OverlayService : Service() {
                 loadedOnce = true
                 val entities = fetched.filter { wanted.contains(it.entityId) }
                 container.removeAllViews()
+                rows.clear()
                 if (entities.isEmpty()) {
                     container.addView(label("Entités introuvables (${wanted.size} demandée(s))", 0xFF9BA1AA.toInt()))
                     return@post
                 }
-                entities.forEach { entity -> container.addView(row(entity)) }
+                selectedIndex = 0
+                entities.forEach { entity ->
+                    val holder = row(entity)
+                    rows.add(holder)
+                    container.addView(holder.root)
+                }
+                applyHighlight()
             }
         }
     }
 
-    private fun row(entity: HAEntity): View {
-        val row = LinearLayout(ui).apply {
+    private fun row(entity: HAEntity): Row {
+        val line = LinearLayout(ui).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(9), 0, dp(9))
@@ -281,8 +314,9 @@ class OverlayService : Service() {
             setTextColor(0xFF9BA1AA.toInt())
             textSize = 12f
         })
-        row.addView(texts)
+        line.addView(texts)
 
+        var switch: Switch? = null
         if (entity.type == "light") {
             val toggle = Switch(ui).apply {
                 isChecked = entity.state == "on"
@@ -300,10 +334,47 @@ class OverlayService : Service() {
                     handler.postDelayed({ refresh() }, 800)
                 }
             }
-            row.addView(toggle)
+            line.addView(toggle)
+            switch = toggle
         }
 
-        return row
+        return Row(line, switch, entity)
+    }
+
+    /** Met en évidence la ligne sélectionnée à la télécommande. */
+    private fun applyHighlight() {
+        rows.forEachIndexed { index, item ->
+            item.root.background = if (index == selectedIndex) {
+                rounded(0xFF23324A.toInt(), 0xFF3E8EF7.toInt())
+            } else {
+                null
+            }
+            item.root.setPadding(dp(8), dp(4), dp(8), dp(4))
+        }
+    }
+
+    /** Touches D-pad transmises par le service d'accessibilité. */
+    private fun onExternalKey(keyCode: Int) {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (rows.isNotEmpty()) {
+                    selectedIndex = (selectedIndex + 1) % rows.size
+                    applyHighlight()
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (rows.isNotEmpty()) {
+                    selectedIndex = (selectedIndex - 1 + rows.size) % rows.size
+                    applyHighlight()
+                }
+            }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                val item = rows.getOrNull(selectedIndex) ?: return
+                val toggle = item.toggle ?: return
+                toggle.isChecked = !toggle.isChecked
+            }
+            KeyEvent.KEYCODE_BACK -> hide()
+        }
     }
 
     private fun label(text: String, color: Int): TextView = TextView(ui).apply {
