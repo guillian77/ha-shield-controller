@@ -104,6 +104,31 @@ class SettingsManager(context: Context) {
         configPrefs.edit().putStringSet("selected_entities", entities).apply()
     }
 
+    /** Ordre d'affichage des entités sur le dashboard (liste d'entity_id). */
+    var dashboardOrder: List<String>
+        get() = (configPrefs.getString("dashboard_order", "") ?: "")
+            .split("\n")
+            .filter { it.isNotBlank() }
+        set(value) = configPrefs.edit().putString("dashboard_order", value.joinToString("\n")).apply()
+
+    /** Ajoute une entité en fin d'ordre si elle n'y figure pas encore. */
+    fun ensureInOrder(entityId: String) {
+        val current = dashboardOrder
+        if (entityId !in current) dashboardOrder = current + entityId
+    }
+
+    /** Déplace une entité de [delta] positions dans l'ordre du dashboard. */
+    fun moveInOrder(entityId: String, delta: Int) {
+        val current = dashboardOrder.toMutableList()
+        val index = current.indexOf(entityId)
+        if (index < 0) return
+        val target = index + delta
+        if (target < 0 || target >= current.size) return
+        current.removeAt(index)
+        current.add(target, entityId)
+        dashboardOrder = current
+    }
+
     /**
      * Sauvegarde complète de la configuration dans un JSON, pour la restaurer
      * après une désinstallation/réinstallation (changement de clé de signature,
@@ -112,6 +137,8 @@ class SettingsManager(context: Context) {
     fun exportJson(): String {
         val selected = JSONArray()
         getSelectedEntities().sorted().forEach { selected.put(it) }
+        val order = JSONArray()
+        dashboardOrder.forEach { order.put(it) }
         return JSONObject().apply {
             put("schema", 1)
             put("serverUrl", serverUrl)
@@ -120,6 +147,7 @@ class SettingsManager(context: Context) {
             put("oauthClientId", oauthClientId)
             put("accessTokenExpiresAt", accessTokenExpiresAt)
             put("selectedEntities", selected)
+            put("dashboardOrder", order)
         }.toString(2)
     }
 
@@ -143,6 +171,15 @@ class SettingsManager(context: Context) {
                     set.add(array.getString(i))
                 }
                 saveSelectedEntities(set)
+            }
+
+            val orderArray = json.optJSONArray("dashboardOrder")
+            if (orderArray != null) {
+                val order = mutableListOf<String>()
+                for (i in 0 until orderArray.length()) {
+                    order.add(orderArray.getString(i))
+                }
+                dashboardOrder = order
             }
             true
         } catch (e: Exception) {

@@ -144,6 +144,7 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
     var isConnected by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("Configuration requise") }
     var showConfig by remember { mutableStateOf(false) }
+    var dashboardOrder by remember { mutableStateOf(settings.dashboardOrder) }
 
     // Retour : quitte les réglages pour revenir au dashboard au lieu de
     // fermer l'activité.
@@ -258,9 +259,12 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
                     serverUrl = settings.serverUrl
                     accessToken = settings.accessToken
                     selectedEntities = settings.getSelectedEntities()
+                    dashboardOrder = settings.dashboardOrder
                 },
                 isConnected = isConnected,
-                statusMessage = statusMessage
+                statusMessage = statusMessage,
+                order = dashboardOrder,
+                onOrderChange = { dashboardOrder = it }
             )
         } else {
             DashboardPane(
@@ -268,7 +272,8 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
                 api = api,
                 entities = entities,
                 selectedEntities = selectedEntities,
-                isConnected = isConnected
+                isConnected = isConnected,
+                order = dashboardOrder
             )
         }
     }
@@ -310,13 +315,20 @@ fun EditFieldDialog(
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 }
 
+/** Trie les entités selon l'ordre choisi, puis alphabétiquement à défaut. */
+private fun entityComparator(order: List<String>): Comparator<HAEntity> {
+    val index = order.withIndex().associate { it.value to it.index }
+    return compareBy({ index[it.entityId] ?: Int.MAX_VALUE }, { it.name.lowercase() })
+}
+
 @Composable
 fun DashboardPane(
     modifier: Modifier = Modifier,
     api: HomeAssistantApi,
     entities: List<HAEntity>,
     selectedEntities: Set<String>,
-    isConnected: Boolean
+    isConnected: Boolean,
+    order: List<String> = emptyList()
 ) {
     if (!isConnected) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -337,8 +349,12 @@ fun DashboardPane(
         return
     }
 
-    val thermostats = displayEntities.filter { it.type == "thermostat" }
-    val lights = displayEntities.filter { it.type == "light" }
+    val thermostats = displayEntities
+        .filter { it.type == "thermostat" }
+        .sortedWith(entityComparator(order))
+    val lights = displayEntities
+        .filter { it.type == "light" }
+        .sortedWith(entityComparator(order))
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),

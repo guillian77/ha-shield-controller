@@ -73,7 +73,9 @@ fun SettingsScreen(
     onOAuthToken: (String) -> Unit,
     onImported: () -> Unit,
     isConnected: Boolean,
-    statusMessage: String
+    statusMessage: String,
+    order: List<String>,
+    onOrderChange: (List<String>) -> Unit
 ) {
     val context = LocalContext.current
     val discovery = remember { HaDiscovery(context) }
@@ -277,7 +279,12 @@ fun SettingsScreen(
                     fontSize = 13.sp
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { onSelectionChange(entities.map { it.entityId }.toSet()) }) {
+                    TextButton(onClick = {
+                        val ids = entities.map { it.entityId }.toSet()
+                        ids.forEach { settings.ensureInOrder(it) }
+                        onSelectionChange(ids)
+                        onOrderChange(settings.dashboardOrder)
+                    }) {
                         Text("Tout")
                     }
                     TextButton(onClick = { onSelectionChange(emptySet()) }) {
@@ -290,17 +297,47 @@ fun SettingsScreen(
         if (entities.isEmpty()) {
             item { SettingsHint("Aucune entité reçue pour le moment.") }
         } else {
-            items(entities, key = { it.entityId }) { entity ->
+            val orderIndex = order.withIndex().associate { it.value to it.index }
+            val orderedSelected = entities
+                .filter { selectedEntities.contains(it.entityId) }
+                .sortedWith(compareBy({ orderIndex[it.entityId] ?: Int.MAX_VALUE }, { it.name }))
+            val others = entities
+                .filterNot { selectedEntities.contains(it.entityId) }
+                .sortedBy { it.name }
+
+            items(orderedSelected, key = { "sel-" + it.entityId }) { entity ->
                 EntitySelectRow(
                     entity = entity,
-                    selected = selectedEntities.contains(entity.entityId),
+                    selected = true,
                     onToggle = { checked ->
-                        onSelectionChange(
-                            if (checked) selectedEntities + entity.entityId
-                            else selectedEntities - entity.entityId
-                        )
+                        if (!checked) onSelectionChange(selectedEntities - entity.entityId)
+                    },
+                    onMoveUp = {
+                        settings.moveInOrder(entity.entityId, -1)
+                        onOrderChange(settings.dashboardOrder)
+                    },
+                    onMoveDown = {
+                        settings.moveInOrder(entity.entityId, 1)
+                        onOrderChange(settings.dashboardOrder)
                     }
                 )
+            }
+
+            if (others.isNotEmpty()) {
+                item { SettingsHint("Non affichées") }
+                items(others, key = { "off-" + it.entityId }) { entity ->
+                    EntitySelectRow(
+                        entity = entity,
+                        selected = false,
+                        onToggle = { checked ->
+                            if (checked) {
+                                onSelectionChange(selectedEntities + entity.entityId)
+                                settings.ensureInOrder(entity.entityId)
+                                onOrderChange(settings.dashboardOrder)
+                            }
+                        }
+                    )
+                }
             }
         }
 
@@ -439,7 +476,13 @@ private fun ConnectionCard(
 }
 
 @Composable
-private fun EntitySelectRow(entity: HAEntity, selected: Boolean, onToggle: (Boolean) -> Unit) {
+private fun EntitySelectRow(
+    entity: HAEntity,
+    selected: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null
+) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -471,6 +514,14 @@ private fun EntitySelectRow(entity: HAEntity, selected: Boolean, onToggle: (Bool
                     fontFamily = FontFamily.Monospace
                 )
             }
+            if (onMoveUp != null) {
+                ArrowButton(label = "↑", onClick = onMoveUp)
+                Spacer(Modifier.width(6.dp))
+            }
+            if (onMoveDown != null) {
+                ArrowButton(label = "↓", onClick = onMoveDown)
+                Spacer(Modifier.width(8.dp))
+            }
             Checkbox(
                 checked = selected,
                 onCheckedChange = onToggle,
@@ -480,6 +531,22 @@ private fun EntitySelectRow(entity: HAEntity, selected: Boolean, onToggle: (Bool
                     checkmarkColor = Color.White
                 )
             )
+        }
+    }
+}
+
+@Composable
+private fun ArrowButton(label: String, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = AppColors.surfaceHigh,
+        border = BorderStroke(1.dp, AppColors.outline),
+        modifier = Modifier
+            .size(34.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(text = label, color = AppColors.textPrimary, fontSize = 16.sp)
         }
     }
 }
