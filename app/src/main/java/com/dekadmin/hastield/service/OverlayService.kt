@@ -233,19 +233,24 @@ class OverlayService : Service() {
         }
 
         api.fetchEntities { fetched ->
-            if (fetched == null) {
+            // Le callback arrive sur un thread réseau : toute manipulation de vue
+            // doit repasser sur le thread principal.
+            handler.post {
+                if (rowsContainer !== container) return@post
+                if (fetched == null) {
+                    container.removeAllViews()
+                    container.addView(label("Connexion impossible — vérifie la session", 0xFFFFC24B.toInt()))
+                    return@post
+                }
+                loadedOnce = true
+                val entities = fetched.filter { wanted.contains(it.entityId) }
                 container.removeAllViews()
-                container.addView(label("Connexion impossible — vérifie la session", 0xFFFFC24B.toInt()))
-                return@fetchEntities
+                if (entities.isEmpty()) {
+                    container.addView(label("Entités introuvables (${wanted.size} demandée(s))", 0xFF9BA1AA.toInt()))
+                    return@post
+                }
+                entities.forEach { entity -> container.addView(row(entity)) }
             }
-            loadedOnce = true
-            val entities = fetched.filter { wanted.contains(it.entityId) }
-            container.removeAllViews()
-            if (entities.isEmpty()) {
-                container.addView(label("Entités introuvables (${wanted.size} demandée(s))", 0xFF9BA1AA.toInt()))
-                return@fetchEntities
-            }
-            entities.forEach { entity -> container.addView(row(entity)) }
         }
     }
 
