@@ -24,6 +24,13 @@ data class UpdateInfo(
     val sha256: String = ""
 )
 
+/** Résultat d'une vérification de mise à jour. */
+sealed class UpdateResult {
+    data class Available(val info: UpdateInfo) : UpdateResult()
+    object UpToDate : UpdateResult()
+    data class Failed(val reason: String) : UpdateResult()
+}
+
 /**
  * Vérifie la dernière version publiée dans la release GitHub `latest` et
  * propose l'installation de l'APK depuis l'application.
@@ -45,41 +52,47 @@ class Updater(private val context: Context) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** Renvoie la mise à jour disponible, ou null si l'app est à jour. */
-    fun check(currentVersionCode: Int, callback: (UpdateInfo?) -> Unit) {
+    /** Renvoie le résultat de la vérification : disponible, à jour, ou l'erreur. */
+    fun check(currentVersionCode: Int, callback: (UpdateResult) -> Unit) {
         val request = Request.Builder().url(VERSION_URL).header("Cache-Control", "no-cache").build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                mainHandler.post { callback(null) }
+                mainHandler.post {
+                    callback(UpdateResult.Failed("Réseau indisponible : ${e.message ?: e.javaClass.simpleName}"))
+                }
             }
 
             override fun onResponse(call: Call, response: Response) {
-                var result: UpdateInfo? = null
+                var result: UpdateResult = UpdateResult.Failed("Réponse inattendue")
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        mainHandler.post { callback(null) }
-                        return
-                    }
-                    val body = resp.body?.string().orEmpty()
-                    result = try {
-                        val json = JSONObject(body)
-                        val code = json.optInt("versionCode", 0)
-                        if (code <= currentVersionCode) {
-                            null
-                        } else {
-                            UpdateInfo(
-                                versionCode = code,
-                                versionName = json.optString("versionName", code.toString()),
-                                apkUrl = json.optString("apkUrl", DEFAULT_APK_URL),
-                                sha256 = json.optString("sha256", "")
-                            )
+                        result = UpdateResult.Failed("HTTP ${resp.code} sur version.json")
+                    } else {
+                        val body = resp.body?.string().orEmpty()
+                        result = try {
+                            val json = JSONObject(body)
+                            val code = json.optInt("versionCode", 0)
+                            if (code <= 0) {
+                                UpdateResult.Failed("version.json illisible")
+                            } else if (code <= currentVersionCode) {
+                                UpdateResult.UpToDate
+                            } else {
+                                UpdateResult.Available(
+                                    UpdateInfo(
+                                        versionCode = code,
+                                        versionName = json.optString("versionName", code.toString()),
+                                        apkUrl = json.optString("apkUrl", DEFAULT_APK_URL),
+                                        sha256 = json.optString("sha256", "")
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {
+                            UpdateResult.Failed("version.json invalide : ${e.message}")
                         }
-                    } catch (e: Exception) {
-                        null
                     }
                 }
-                val info = result
-                mainHandler.post { callback(info) }
+                val finalResult = result
+                mainHandler.post { callback(finalResult) }
             }
         })
     }

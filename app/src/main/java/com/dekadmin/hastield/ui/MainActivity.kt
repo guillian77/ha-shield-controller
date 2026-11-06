@@ -75,6 +75,7 @@ import com.dekadmin.hastield.ha.HaDiscovery
 import com.dekadmin.hastield.ha.HomeAssistantApi
 import com.dekadmin.hastield.ha.SettingsManager
 import com.dekadmin.hastield.update.UpdateInfo
+import com.dekadmin.hastield.update.UpdateResult
 import com.dekadmin.hastield.update.Updater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -154,9 +155,41 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
     val updater = remember { Updater(context) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var updateMessage by remember { mutableStateOf<String?>(null) }
+    var updateChecking by remember { mutableStateOf(false) }
+
+    // Une seule source de vérité pour la mise à jour : l'en-tête et les réglages
+    // affichent le même résultat, et la vérification est refaite périodiquement.
+    val checkForUpdate: () -> Unit = {
+        updateChecking = true
+        updater.check(BuildConfig.VERSION_CODE) { result ->
+            updateChecking = false
+            when (result) {
+                is UpdateResult.Available -> {
+                    updateInfo = result.info
+                    updateMessage = null
+                }
+                is UpdateResult.UpToDate -> {
+                    updateInfo = null
+                    updateMessage = "Application à jour"
+                }
+                is UpdateResult.Failed -> {
+                    updateInfo = null
+                    updateMessage = "Vérification impossible — ${result.reason}"
+                }
+            }
+        }
+    }
+
+    val installUpdate: (UpdateInfo) -> Unit = { info ->
+        updater.downloadAndInstall(info) { state -> updateMessage = state }
+    }
 
     LaunchedEffect(Unit) {
-        updater.check(BuildConfig.VERSION_CODE) { info -> updateInfo = info }
+        checkForUpdate()
+        while (true) {
+            delay(6 * 60 * 60 * 1000L)
+            checkForUpdate()
+        }
     }
 
     LaunchedEffect(accessToken) {
@@ -208,11 +241,7 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
             ) {
                 val available = updateInfo
                 if (available != null) {
-                    Button(
-                        onClick = {
-                            updater.downloadAndInstall(available) { msg -> updateMessage = msg }
-                        }
-                    ) {
+                    Button(onClick = { installUpdate(available) }) {
                         Text("Mettre à jour ${available.versionName}")
                     }
                 }
@@ -264,7 +293,12 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
                 isConnected = isConnected,
                 statusMessage = statusMessage,
                 order = dashboardOrder,
-                onOrderChange = { dashboardOrder = it }
+                onOrderChange = { dashboardOrder = it },
+                update = updateInfo,
+                updateMessage = updateMessage,
+                updateChecking = updateChecking,
+                onCheckUpdate = checkForUpdate,
+                onInstallUpdate = installUpdate
             )
         } else {
             DashboardPane(

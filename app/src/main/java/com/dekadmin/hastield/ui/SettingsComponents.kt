@@ -75,7 +75,12 @@ fun SettingsScreen(
     isConnected: Boolean,
     statusMessage: String,
     order: List<String>,
-    onOrderChange: (List<String>) -> Unit
+    onOrderChange: (List<String>) -> Unit,
+    update: UpdateInfo?,
+    updateMessage: String?,
+    updateChecking: Boolean,
+    onCheckUpdate: () -> Unit,
+    onInstallUpdate: (UpdateInfo) -> Unit
 ) {
     val context = LocalContext.current
     val discovery = remember { HaDiscovery(context) }
@@ -135,6 +140,10 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
+        if (update != null) {
+            item { UpdateBanner(update, onInstallUpdate) }
+        }
+
         item {
             ConnectionCard(
                 serverUrl = serverUrl,
@@ -370,7 +379,15 @@ fun SettingsScreen(
         }
 
         item { SectionHeader("Mise à jour", R.drawable.ic_settings_update) }
-        item { UpdateCard() }
+        item {
+            UpdateCard(
+                update = update,
+                message = updateMessage,
+                checking = updateChecking,
+                onCheck = onCheckUpdate,
+                onInstall = onInstallUpdate
+            )
+        }
     }
 
     if (showLogin) {
@@ -552,56 +569,85 @@ private fun ArrowButton(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun UpdateCard() {
-    val context = LocalContext.current
-    val updater = remember { Updater(context) }
-    var update by remember { mutableStateOf<UpdateInfo?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var checking by remember { mutableStateOf(false) }
-
-    val check: () -> Unit = {
-        checking = true
-        message = null
-        updater.check(BuildConfig.VERSION_CODE) { info ->
-            checking = false
-            update = info
-            if (info == null) message = "Application à jour"
-        }
-    }
-
-    LaunchedEffect(Unit) { check() }
-
+private fun UpdateCard(
+    update: UpdateInfo?,
+    message: String?,
+    checking: Boolean,
+    onCheck: () -> Unit,
+    onInstall: (UpdateInfo) -> Unit
+) {
     SettingsCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                color = AppColors.textSecondary,
-                fontSize = 13.sp,
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedButton(onClick = check) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    color = AppColors.textPrimary,
+                    fontSize = 14.sp
+                )
+                if (update != null) {
+                    Text(
+                        text = "Version ${update.versionName} disponible",
+                        color = AppColors.accent,
+                        fontSize = 12.sp
+                    )
+                } else if (message != null) {
+                    Text(text = message, color = AppColors.textSecondary, fontSize = 12.sp)
+                }
+            }
+            OutlinedButton(onClick = onCheck) {
                 Text(if (checking) "Vérification…" else "Vérifier")
             }
         }
 
-        val available = update
-        if (available != null) {
+        if (update != null) {
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = { updater.downloadAndInstall(available) { state -> message = state } },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Mettre à jour vers ${available.versionName}")
+            Button(onClick = { onInstall(update) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Mettre à jour vers ${update.versionName}")
             }
         }
 
-        message?.let {
+        if (update != null && message != null) {
             Spacer(Modifier.height(8.dp))
-            Text(text = it, fontSize = 12.sp, color = AppColors.amber)
+            Text(text = message, fontSize = 12.sp, color = AppColors.amber)
+        }
+    }
+}
+
+/** Bandeau d'alerte en haut des réglages quand une version est disponible. */
+@Composable
+private fun UpdateBanner(update: UpdateInfo, onInstall: (UpdateInfo) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = AppColors.accent.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, AppColors.accent.copy(alpha = 0.6f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Mise à jour disponible",
+                    color = AppColors.textPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Version ${update.versionName} (actuelle : ${BuildConfig.VERSION_NAME})",
+                    color = AppColors.textSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            Button(onClick = { onInstall(update) }) {
+                Text("Installer")
+            }
         }
     }
 }
