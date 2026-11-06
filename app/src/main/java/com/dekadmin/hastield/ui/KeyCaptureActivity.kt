@@ -129,11 +129,23 @@ class KeyCaptureActivity : Activity() {
             HaKeyService.GESTURE_LONG -> "appui long"
             else -> "appui simple"
         }
-        Toast.makeText(
-            this,
-            "Touche ${KeyEvent.keyCodeToString(keyCode)} · $label",
-            Toast.LENGTH_LONG
-        ).show()
+
+        // Certaines touches constructeur (Netflix, TV, Guide) sont traitées par le
+        // système avant l'application : l'accessibilité ne peut pas toujours les
+        // intercepter.
+        val risky = keyCode == KeyEvent.KEYCODE_BUTTON_12 ||
+            keyCode == KeyEvent.KEYCODE_TV ||
+            keyCode == KeyEvent.KEYCODE_GUIDE ||
+            keyCode == KeyEvent.KEYCODE_HOME
+
+        val message = if (risky) {
+            "${KeyEvent.keyCodeToString(keyCode)} · $label\n" +
+                "Touche système : elle peut ouvrir son application avant l'app. Teste avec « Tester » ; sinon choisis une autre touche."
+        } else {
+            "Touche ${KeyEvent.keyCodeToString(keyCode)} · $label"
+        }
+
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         finish()
     }
 

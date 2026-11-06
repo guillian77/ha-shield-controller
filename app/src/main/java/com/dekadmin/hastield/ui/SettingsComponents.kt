@@ -677,6 +677,53 @@ private fun gestureLabel(gesture: String): String = when (gesture) {
     else -> "appui simple"
 }
 
+private const val ADB_ENABLE_ACCESSIBILITY =
+    "adb shell settings put secure enabled_accessibility_services com.dekadmin.hastield/com.dekadmin.hastield.service.HaKeyService\n" +
+        "adb shell settings put secure accessibility_enabled 1"
+
+private fun openAccessibilitySettings(context: Context) {
+    val candidates = listOf(
+        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+        Intent(Settings.ACTION_SETTINGS)
+    )
+    for (intent in candidates) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent.resolveActivity(context.packageManager) != null) {
+            try {
+                context.startActivity(intent)
+                return
+            } catch (_: Exception) {
+                // essaie le suivant
+            }
+        }
+    }
+    android.widget.Toast.makeText(
+        context,
+        "Aucun écran d'accessibilité sur cet appareil : utilise les commandes ADB affichées",
+        android.widget.Toast.LENGTH_LONG
+    ).show()
+}
+
+private fun openOverlaySettings(context: Context) {
+    val intent = Intent(
+        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+        Uri.parse("package:${context.packageName}")
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+            return
+        }
+        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(
+            context,
+            "Impossible d'ouvrir les autorisations : ${e.message}",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
+}
+
 @Composable
 private fun OverlayCard(settings: SettingsManager, entities: List<HAEntity>) {
     val context = LocalContext.current
@@ -729,25 +776,43 @@ private fun OverlayCard(settings: SettingsManager, entities: List<HAEntity>) {
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!accessibilityOn) {
-                    OutlinedButton(
-                        onClick = {
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        }
-                    ) { Text("Activer l'accessibilité") }
+                    OutlinedButton(onClick = { openAccessibilitySettings(context) }) {
+                        Text("Activer l'accessibilité")
+                    }
                 }
                 if (!overlayAllowed) {
-                    OutlinedButton(
-                        onClick = {
-                            context.startActivity(
-                                Intent(
-                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    Uri.parse("package:${context.packageName}")
-                                )
-                            )
-                        }
-                    ) { Text("Autoriser l'affichage") }
+                    OutlinedButton(onClick = { openOverlaySettings(context) }) {
+                        Text("Autoriser l'affichage")
+                    }
                 }
             }
+        }
+
+        if (!accessibilityOn || !overlayAllowed) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Android TV n'expose pas toujours l'écran d'accessibilité. " +
+                    "À défaut, active le service en ADB (voir « Aide ADB » ci-dessous).",
+                color = AppColors.textSecondary,
+                fontSize = 12.sp
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText("adb", ADB_ENABLE_ACCESSIBILITY)
+                    )
+                    android.widget.Toast.makeText(context, "Commandes ADB copiées", android.widget.Toast.LENGTH_SHORT).show()
+                }) { Text("Copier les commandes ADB") }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = ADB_ENABLE_ACCESSIBILITY,
+                color = AppColors.textSecondary,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace
+            )
         }
 
         Spacer(Modifier.height(12.dp))

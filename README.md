@@ -68,9 +68,19 @@ application du Shield. Il se paramètre dans *Réglages → Overlay* :
 1. **Service d'accessibilité** — *Activer l'accessibilité*, puis activer
    « HA Shield Control » dans la liste. Indispensable : c'est le seul moyen de
    voir une touche pressée alors qu'une autre application est au premier plan.
+   Android TV n'expose pas toujours cet écran ; dans ce cas la section affiche
+   les deux commandes ADB à exécuter :
+
+   ```
+   adb shell settings put secure enabled_accessibility_services com.dekadmin.hastield/com.dekadmin.hastield.service.HaKeyService
+   adb shell settings put secure accessibility_enabled 1
+   ```
 2. **Affichage par-dessus** — *Autoriser l'affichage* (autorisation système).
 3. **Touche** — *Configurer la touche*, puis appuyer réellement sur la touche
    voulue : un appui = simple, deux appuis rapides = double, maintenir = long.
+   Les touches constructeur (Netflix `BUTTON_12`, TV, Guide) sont traitées par le
+   système avant l'application : l'app le signale à la capture, et il vaut mieux
+   choisir une autre touche si elle ouvre son application malgré tout.
 4. **Contenu** — par défaut l'overlay reprend la sélection du dashboard ;
    désactiver le commutateur permet de choisir une liste dédiée.
 5. *Tester* affiche l'overlay immédiatement.
