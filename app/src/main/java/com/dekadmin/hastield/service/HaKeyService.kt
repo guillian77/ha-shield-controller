@@ -28,6 +28,14 @@ class HaKeyService : AccessibilityService() {
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        /**
+         * Vrai pendant la capture d'une touche : le service doit alors laisser
+         * passer les événements, sinon il consomme la touche déjà configurée et
+         * l'activité de capture ne reçoit plus rien.
+         */
+        @Volatile
+        var captureActive: Boolean = false
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -62,6 +70,10 @@ class HaKeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Pendant la capture d'une touche, ne rien intercepter : l'activité de
+        // capture doit recevoir tous les appuis, y compris celui déjà configuré.
+        if (captureActive) return false
+
         val s = settings ?: return false
         val configured = s.overlayKeyCode
         if (configured == 0 || event.keyCode != configured) return false

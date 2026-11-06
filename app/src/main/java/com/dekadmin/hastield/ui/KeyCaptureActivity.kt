@@ -15,6 +15,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.dekadmin.hastield.ha.SettingsManager
 import com.dekadmin.hastield.service.HaKeyService
+import com.dekadmin.hastield.service.OverlayService
 
 /**
  * Activité plein écran qui capture la touche de la télécommande et le type
@@ -38,10 +39,27 @@ class KeyCaptureActivity : Activity() {
     private var lastCompletedCode = 0
     private var pendingSingle: Runnable? = null
     private var done = false
+    private var statusText: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Le service d'accessibilité ne doit pas intercepter les touches pendant
+        // la capture, sinon la touche déjà configurée est avalée avant nous.
+        HaKeyService.captureActive = true
+        // Un overlay affiché volerait aussi le focus : on le ferme.
+        OverlayService.hideIfShowing(this)
         setContentView(buildUi())
+    }
+
+    override fun onPause() {
+        // Si l'utilisateur quitte l'écran, on rend l'interception au service.
+        HaKeyService.captureActive = false
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        HaKeyService.captureActive = true
     }
 
     private fun buildUi(): ViewGroup {
@@ -69,6 +87,15 @@ class KeyCaptureActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
+            text = "En attente d'une touche…"
+            setTextColor(Color.parseColor("#3E8EF7"))
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setPadding(0, 24, 0, 24)
+            statusText = this
+        })
+
+        root.addView(TextView(this).apply {
             text = "Retour pour annuler"
             setTextColor(Color.parseColor("#3E8EF7"))
             textSize = 14f
@@ -86,6 +113,8 @@ class KeyCaptureActivity : Activity() {
         if (event.repeatCount == 0) {
             downAt = SystemClock.elapsedRealtime()
             pressedCode = keyCode
+            statusText?.text = "Touche reçue : " +
+                KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_").replace('_', ' ')
         }
         return true
     }
@@ -150,6 +179,7 @@ class KeyCaptureActivity : Activity() {
     }
 
     override fun onDestroy() {
+        HaKeyService.captureActive = false
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }

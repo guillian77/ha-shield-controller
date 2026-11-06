@@ -50,6 +50,17 @@ class OverlayService : Service() {
             }
         }
 
+        /** Ferme l'overlay s'il est affiché (utilisé avant la capture d'une touche). */
+        fun hideIfShowing(context: Context) {
+            if (instance == null) return
+            val intent = Intent(context, OverlayService::class.java).apply { action = ACTION_HIDE }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
         @Volatile
         private var instance: OverlayService? = null
     }
