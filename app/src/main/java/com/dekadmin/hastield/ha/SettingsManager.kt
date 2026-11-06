@@ -102,6 +102,14 @@ class SettingsManager(context: Context) {
 
     fun saveSelectedEntities(entities: Set<String>) {
         configPrefs.edit().putStringSet("selected_entities", entities).apply()
+        // L'ordre doit rester aligné sur la sélection, sinon les déplacements
+        // sautent des positions occupées par des entités non affichées.
+        dashboardOrder = Ordering.normalize(dashboardOrder, entities)
+    }
+
+    /** Applique une nouvelle sélection et normalise l'ordre dans la foulée. */
+    fun setSelection(entities: Set<String>) {
+        saveSelectedEntities(entities)
     }
 
     /** Ordre d'affichage des entités sur le dashboard (liste d'entity_id). */
@@ -119,14 +127,7 @@ class SettingsManager(context: Context) {
 
     /** Déplace une entité de [delta] positions dans l'ordre du dashboard. */
     fun moveInOrder(entityId: String, delta: Int) {
-        val current = dashboardOrder.toMutableList()
-        val index = current.indexOf(entityId)
-        if (index < 0) return
-        val target = index + delta
-        if (target < 0 || target >= current.size) return
-        current.removeAt(index)
-        current.add(target, entityId)
-        dashboardOrder = current
+        dashboardOrder = Ordering.move(dashboardOrder, entityId, delta)
     }
 
     /**

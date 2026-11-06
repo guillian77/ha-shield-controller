@@ -70,6 +70,13 @@ jobs:
         } >> "${GITHUB_ENV}"
         echo "Signature stable activée ($(wc -c < "${RUNNER_TEMP}/release.jks") octets, alias ${KEY_ALIAS})."
 
+    - name: Run unit tests
+      run: |
+        chmod +x gradlew
+        ./gradlew --no-daemon testDebugUnitTest --stacktrace \
+          -PversionCode=${{ github.run_number }} \
+          -PversionName=1.0.${{ github.run_number }}
+
     - name: Build debug APK with Gradle wrapper
       run: |
         chmod +x gradlew

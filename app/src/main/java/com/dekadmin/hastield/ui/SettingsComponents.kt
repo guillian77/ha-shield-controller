@@ -52,6 +52,7 @@ import com.dekadmin.hastield.R
 import com.dekadmin.hastield.ha.DiscoveredServer
 import com.dekadmin.hastield.ha.HAEntity
 import com.dekadmin.hastield.ha.HaDiscovery
+import com.dekadmin.hastield.ha.Ordering
 import com.dekadmin.hastield.ha.SettingsManager
 import com.dekadmin.hastield.update.UpdateInfo
 import com.dekadmin.hastield.update.Updater
@@ -314,10 +315,11 @@ fun SettingsScreen(
                 .filterNot { selectedEntities.contains(it.entityId) }
                 .sortedBy { it.name }
 
-            items(orderedSelected, key = { "sel-" + it.entityId }) { entity ->
+            items(orderedSelected, key = { it.entityId }) { entity ->
                 EntitySelectRow(
                     entity = entity,
                     selected = true,
+                    position = Ordering.positionOf(order, entity.entityId),
                     onToggle = { checked ->
                         if (!checked) onSelectionChange(selectedEntities - entity.entityId)
                     },
@@ -334,16 +336,13 @@ fun SettingsScreen(
 
             if (others.isNotEmpty()) {
                 item { SettingsHint("Non affichées") }
-                items(others, key = { "off-" + it.entityId }) { entity ->
+                items(others, key = { it.entityId }) { entity ->
                     EntitySelectRow(
                         entity = entity,
                         selected = false,
+                        position = 0,
                         onToggle = { checked ->
-                            if (checked) {
-                                onSelectionChange(selectedEntities + entity.entityId)
-                                settings.ensureInOrder(entity.entityId)
-                                onOrderChange(settings.dashboardOrder)
-                            }
+                            if (checked) onSelectionChange(selectedEntities + entity.entityId)
                         }
                     )
                 }
@@ -497,6 +496,7 @@ private fun EntitySelectRow(
     entity: HAEntity,
     selected: Boolean,
     onToggle: (Boolean) -> Unit,
+    position: Int = 0,
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null
 ) {
@@ -517,6 +517,23 @@ private fun EntitySelectRow(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (position > 0) {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AppColors.accent.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = position.toString(),
+                        color = AppColors.accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = entity.name,

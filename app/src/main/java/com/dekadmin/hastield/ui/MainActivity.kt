@@ -266,7 +266,8 @@ fun MainScreen(settings: SettingsManager, api: HomeAssistantApi) {
                 selectedEntities = selectedEntities,
                 onSelectionChange = {
                     selectedEntities = it
-                    settings.saveSelectedEntities(it)
+                    settings.setSelection(it)
+                    dashboardOrder = settings.dashboardOrder
                 },
                 serverUrl = serverUrl,
                 onServerUrlChange = {
