@@ -2,6 +2,10 @@ package com.dekadmin.hastield.ui
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -29,6 +33,7 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,10 +48,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.dekadmin.hastield.BuildConfig
 import com.dekadmin.hastield.R
 import com.dekadmin.hastield.ha.DiscoveredServer
@@ -54,6 +62,7 @@ import com.dekadmin.hastield.ha.HAEntity
 import com.dekadmin.hastield.ha.HaDiscovery
 import com.dekadmin.hastield.ha.Ordering
 import com.dekadmin.hastield.ha.SettingsManager
+import com.dekadmin.hastield.service.OverlayService
 import com.dekadmin.hastield.update.UpdateInfo
 import com.dekadmin.hastield.update.Updater
 import java.util.Locale
@@ -345,6 +354,9 @@ fun SettingsScreen(
             }
         }
 
+        item { SectionHeader("Overlay", R.drawable.ic_entity_thermostat) }
+        item { OverlayCard(settings, entities) }
+
         item { SectionHeader("Sauvegarde", R.drawable.ic_settings_save) }
 
         item {
@@ -630,3 +642,196 @@ private fun UpdateCard(
     }
 }
 
+
+/** Ligne d'état avec pastille verte/ambre. */
+@Composable
+private fun StatusLine(ok: Boolean, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(if (ok) connectedGreen else AppColors.amber)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(text = text, color = AppColors.textSecondary, fontSize = 13.sp)
+    }
+}
+
+private fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    val expected = "${context.packageName}/com.dekadmin.hastield.service.HaKeyService"
+    val enabled = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ).orEmpty()
+    return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+}
+
+private fun keyLabel(keyCode: Int): String =
+    if (keyCode == 0) "Aucune touche configurée"
+    else KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_").replace('_', ' ')
+
+private fun gestureLabel(gesture: String): String = when (gesture) {
+    "double" -> "double appui"
+    "long" -> "appui long"
+    else -> "appui simple"
+}
+
+@Composable
+private fun OverlayCard(settings: SettingsManager, entities: List<HAEntity>) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var tick by remember { mutableStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) tick++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val accessibilityOn = remember(tick) { isAccessibilityServiceEnabled(context) }
+    val overlayAllowed = remember(tick) { Settings.canDrawOverlays(context) }
+
+    val keyCode = remember(tick) { settings.overlayKeyCode }
+    val gesture = remember(tick) { settings.overlayGesture }
+    var usesDashboard by remember(tick) { mutableStateOf(settings.overlayUsesDashboard) }
+    var selection by remember(tick) { mutableStateOf(settings.getOverlayEntities()) }
+
+    SettingsCard {
+        Text(
+            text = "Overlay sur l'application en cours",
+            color = AppColors.textPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(8.dp))
+
+        StatusLine(
+            ok = accessibilityOn,
+            text = if (accessibilityOn) {
+                "Service d'accessibilité actif"
+            } else {
+                "Service d'accessibilité désactivé"
+            }
+        )
+        StatusLine(
+            ok = overlayAllowed,
+            text = if (overlayAllowed) {
+                "Affichage par-dessus autorisé"
+            } else {
+                "Affichage par-dessus refusé"
+            }
+        )
+
+        if (!accessibilityOn || !overlayAllowed) {
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!accessibilityOn) {
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }
+                    ) { Text("Activer l'accessibilité") }
+                }
+                if (!overlayAllowed) {
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                            )
+                        }
+                    ) { Text("Autoriser l'affichage") }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "${keyLabel(keyCode)} · ${gestureLabel(gesture)}",
+            color = if (keyCode == 0) AppColors.amber else AppColors.accent,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                context.startActivity(Intent(context, KeyCaptureActivity::class.java))
+            }) { Text("Configurer la touche") }
+            OutlinedButton(onClick = { OverlayService.toggle(context) }) { Text("Tester") }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Même sélection que le dashboard",
+                color = AppColors.textSecondary,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = usesDashboard,
+                onCheckedChange = {
+                    usesDashboard = it
+                    settings.overlayUsesDashboard = it
+                }
+            )
+        }
+
+        if (!usesDashboard) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "${selection.size} entité(s) dans l'overlay",
+                color = AppColors.textSecondary,
+                fontSize = 12.sp
+            )
+            entities.forEach { entity ->
+                val checked = selection.contains(entity.entityId)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            selection = if (checked) {
+                                selection - entity.entityId
+                            } else {
+                                selection + entity.entityId
+                            }
+                            settings.saveOverlayEntities(selection)
+                        }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = checked,
+                        onCheckedChange = { value ->
+                            selection = if (value) {
+                                selection + entity.entityId
+                            } else {
+                                selection - entity.entityId
+                            }
+                            settings.saveOverlayEntities(selection)
+                        },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = AppColors.accent,
+                            uncheckedColor = AppColors.textSecondary,
+                            checkmarkColor = Color.White
+                        )
+                    )
+                    Text(
+                        text = entity.name,
+                        color = AppColors.textPrimary,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+}

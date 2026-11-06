@@ -17,6 +17,7 @@ connexion sans recopier de jeton.
 | Authentification | Connexion via la page de login Home Assistant dans une WebView intégrée (aucun navigateur requis), ou token longue durée collé/saisi |
 | Session | Rafraîchissement automatique du jeton OAuth (30 min) et rejeu de la requête sur `401` |
 | Dashboard | Cartes des entités sélectionnées : interrupteur pour les lumières, consigne − / + et presets pour les thermostats |
+| Overlay | Panneau flottant par-dessus n'importe quelle application, ouvert/fermé par une touche de la télécommande (appui simple, double ou long) |
 | Sélection | Choisir les entités affichées, avec compteur et raccourcis « Tout » / « Aucun » |
 | Mises à jour | Détection d'une nouvelle version, téléchargement et lancement de l'installateur depuis l'application |
 | Sauvegarde | Export/import de la configuration (URL, jetons, sélection) vers un fichier JSON |
@@ -58,6 +59,23 @@ adb install -r app-debug.apk
 L'URL et la sélection sont conservées lors des mises à jour. Utiliser
 *Exporter* avant une désinstallation : le fichier JSON permet de tout restaurer
 avec *Importer*.
+
+## Configuration de l'overlay
+
+L'overlay est un panneau flottant qui s'affiche par-dessus n'importe quelle
+application du Shield. Il se paramètre dans *Réglages → Overlay* :
+
+1. **Service d'accessibilité** — *Activer l'accessibilité*, puis activer
+   « HA Shield Control » dans la liste. Indispensable : c'est le seul moyen de
+   voir une touche pressée alors qu'une autre application est au premier plan.
+2. **Affichage par-dessus** — *Autoriser l'affichage* (autorisation système).
+3. **Touche** — *Configurer la touche*, puis appuyer réellement sur la touche
+   voulue : un appui = simple, deux appuis rapides = double, maintenir = long.
+4. **Contenu** — par défaut l'overlay reprend la sélection du dashboard ;
+   désactiver le commutateur permet de choisir une liste dédiée.
+5. *Tester* affiche l'overlay immédiatement.
+
+La même touche le ferme ; Retour le ferme aussi et rend le focus à l'application.
 
 ## Développement
 

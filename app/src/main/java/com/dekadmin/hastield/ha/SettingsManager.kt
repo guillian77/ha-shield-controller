@@ -107,6 +107,33 @@ class SettingsManager(context: Context) {
         dashboardOrder = Ordering.normalize(dashboardOrder, entities)
     }
 
+    /** Touche de la télécommande qui ouvre/ferme l'overlay (0 = non configurée). */
+    var overlayKeyCode: Int
+        get() = configPrefs.getInt("overlay_key_code", 0)
+        set(value) = configPrefs.edit().putInt("overlay_key_code", value).apply()
+
+    /** Type d'appui attendu : "single", "double" ou "long". */
+    var overlayGesture: String
+        get() = configPrefs.getString("overlay_gesture", "single") ?: "single"
+        set(value) = configPrefs.edit().putString("overlay_gesture", value).apply()
+
+    /** Entités affichées dans l'overlay (indépendantes du dashboard). */
+    fun getOverlayEntities(): Set<String> =
+        configPrefs.getStringSet("overlay_entities", emptySet()) ?: emptySet()
+
+    fun saveOverlayEntities(entities: Set<String>) {
+        configPrefs.edit().putStringSet("overlay_entities", entities).apply()
+    }
+
+    /** Si vrai, l'overlay reprend la sélection du dashboard. */
+    var overlayUsesDashboard: Boolean
+        get() = configPrefs.getBoolean("overlay_uses_dashboard", true)
+        set(value) = configPrefs.edit().putBoolean("overlay_uses_dashboard", value).apply()
+
+    /** Entités réellement affichées dans l'overlay. */
+    fun effectiveOverlayEntities(): Set<String> =
+        if (overlayUsesDashboard) getSelectedEntities() else getOverlayEntities()
+
     /** Applique une nouvelle sélection et normalise l'ordre dans la foulée. */
     fun setSelection(entities: Set<String>) {
         saveSelectedEntities(entities)

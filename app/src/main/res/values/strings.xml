@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">HA Shield Control</string>
+    <string name="accessibility_service_description">Permet d\'ouvrir et de fermer l\'overlay Home Assistant avec la touche de la télécommande choisie dans les réglages.</string>
 </resources>
